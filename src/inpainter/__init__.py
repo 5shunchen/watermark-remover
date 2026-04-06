@@ -1,15 +1,28 @@
 """
 AI Inpainting Module
 Uses OpenCV inpainting algorithms with multiple method support
+Also supports LaMa (Large Mask) model for high-quality inpainting
 """
 
+import os
 from typing import Literal, Optional
 
 import cv2
 import numpy as np
 from PIL import Image
 
-InpaintMethod = Literal["telea", "ns", "ns_original"]
+# Optional ONNX runtime import for LaMa model
+try:
+    import onnxruntime as ort
+    from onnxruntime import InferenceSession
+
+    ONNX_AVAILABLE = True
+except ImportError:
+    ort = None
+    InferenceSession = None
+    ONNX_AVAILABLE = False
+
+InpaintMethod = Literal["telea", "ns", "ns_original", "lama"]
 
 
 class Inpainter:
@@ -23,13 +36,31 @@ class Inpainter:
         Initialize the inpainting module
 
         Args:
-            model_path: Path to the inpainting model (reserved for future AI model integration)
-            device: Device to run the model on ("cpu" or "cuda") - reserved for future use
-            method: Inpainting method - "telea" (fast), "ns" (high quality), or "ns_original"
+            model_path: Path to the inpainting model (for LaMa: "models/lama.onnx")
+            device: Device to run the model on ("cpu" or "cuda")
+            method: Inpainting method - "telea" (fast), "ns" (high quality),
+                    "ns_original", or "lama" (AI-based, best quality)
         """
         self.device = device
         self.method = method
+        self.model_path = model_path
         self.model = self._load_model(model_path)
+        self.lama_session: Optional[InferenceSession] = None
+
+        # Auto-detect LaMa model path if method is "lama"
+        if method == "lama" and model_path is None:
+            default_paths = [
+                "models/lama.onnx",
+                os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                    "models",
+                    "lama.onnx",
+                ),
+            ]
+            for path in default_paths:
+                if os.path.exists(path):
+                    self.model_path = path
+                    break
 
     def _load_model(self, model_path: Optional[str]):
         """
@@ -39,12 +70,43 @@ class Inpainter:
             model_path: Path to the model file
 
         Returns:
-            Loaded model object
+            Loaded model object or session
         """
-        # Placeholder for model loading
-        # In a real implementation, this would load an actual inpainting model
-        print(f"Loading inpainting model (placeholder) on {self.device}")
-        return {"loaded": True, "model_path": model_path}
+        if self.method == "lama":
+            if model_path is None or not os.path.exists(model_path):
+                print(f"LaMa model not found at {model_path}, falling back to Telea")
+                self.method = "telea"
+                return {"loaded": False, "fallback": "telea"}
+
+            if not ONNX_AVAILABLE:
+                print("ONNX runtime not available, falling back to Telea")
+                print("Install with: pip install onnxruntime")
+                self.method = "telea"
+                return {"loaded": False, "fallback": "telea"}
+
+            # Load ONNX model for LaMa
+            try:
+                providers = (
+                    ["CUDAExecutionProvider", "CPUExecutionProvider"]
+                    if self.device == "cuda"
+                    else ["CPUExecutionProvider"]
+                )
+                self.lama_session = ort.InferenceSession(
+                    model_path, providers=providers
+                )
+                print(f"LaMa model loaded successfully from {model_path}")
+                return {
+                    "loaded": True,
+                    "model_path": model_path,
+                    "session": self.lama_session,
+                }
+            except Exception as e:
+                print(f"Failed to load LaMa model: {e}, falling back to Telea")
+                self.method = "telea"
+                return {"loaded": False, "fallback": "telea"}
+        else:
+            # OpenCV methods don't require model loading
+            return {"loaded": True, "method": self.method}
 
     def preprocess_mask(self, mask: Image.Image, target_size: tuple) -> np.ndarray:
         """
@@ -102,9 +164,13 @@ class Inpainter:
                 processed_mask, (image_array.shape[1], image_array.shape[0])
             )
 
-        # Apply inpainting using OpenCV's inpainting algorithms
+        # Apply inpainting using OpenCV's inpainting algorithms or LaMa model
         try:
-            # Select inpainting method based on configuration
+            # LaMa model inference
+            if self.method == "lama" and self.lama_session is not None:
+                return self._inpaint_with_lama(image_array, processed_mask)
+
+            # Select OpenCV inpainting method based on configuration
             if self.method == "ns":
                 # Navier-Stokes - higher quality but slower
                 flags = cv2.INPAINT_NS
@@ -146,6 +212,66 @@ class Inpainter:
 
             return Image.fromarray(result)
 
+    def _inpaint_with_lama(
+        self,
+        image_array: np.ndarray,
+        mask_array: np.ndarray,
+    ) -> Image.Image:
+        """
+        Perform inpainting using LaMa model
+
+        Args:
+            image_array: Image as numpy array (RGB format)
+            mask_array: Binary mask array (255 for areas to inpaint)
+
+        Returns:
+            PIL Image with watermarks removed
+        """
+        if self.lama_session is None:
+            raise RuntimeError("LaMa model not loaded")
+
+        # Normalize image to [0, 1] range
+        img_normalized = image_array.astype(np.float32) / 255.0
+
+        # Normalize mask to [0, 1] range
+        mask_normalized = mask_array.astype(np.float32) / 255.0
+
+        # Get input/output names from model
+        input_names = [inp.name for inp in self.lama_session.get_inputs()]
+        output_name = self.lama_session.get_outputs()[0].name
+
+        # Prepare input tensor based on model requirements
+        # LaMa typically expects: image (BGR), mask (single channel)
+        # Convert RGB to BGR for LaMa
+        img_bgr = cv2.cvtColor(img_normalized, cv2.COLOR_RGB2BGR)
+
+        # Add batch dimension and channel dimension for mask
+        img_input = np.transpose(img_bgr, (2, 0, 1))[np.newaxis, ...]
+        mask_input = mask_normalized[np.newaxis, np.newaxis, ...]
+
+        # Run inference
+        result = self.lama_session.run(
+            None,
+            {
+                input_names[0]: img_input,
+                input_names[1]: mask_input,
+            },
+        )
+
+        # Get output and convert back to image
+        output = result[0]
+
+        # Remove batch dimension and transpose back to HWC format
+        output = np.transpose(output[0], (1, 2, 0))
+
+        # Clip to valid range and convert to uint8
+        output = np.clip(output * 255, 0, 255).astype(np.uint8)
+
+        # Convert BGR back to RGB
+        output_rgb = cv2.cvtColor(output, cv2.COLOR_BGR2RGB)
+
+        return Image.fromarray(output_rgb)
+
 
 def remove_watermark(
     image: Image.Image,
@@ -159,13 +285,22 @@ def remove_watermark(
 
     Args:
         image: Input PIL Image with watermarks
-        mask: Mask indicating watermark areas
-        model_path: Path to the inpainting model (reserved for future use)
-        device: Device to run the model on (reserved for future use)
-        method: Inpainting method - "telea" (fast), "ns" (high quality), "ns_original"
+        mask: Mask indicating watermark areas (white=watermark, black=background)
+        model_path: Path to the LaMa model file (e.g., "models/lama.onnx")
+        device: Device to run the model on ("cpu" or "cuda")
+        method: Inpainting method - "telea" (fast), "ns" (high quality),
+                "ns_original", or "lama" (AI-based, best quality)
 
     Returns:
         PIL Image with watermarks removed
+
+    Example:
+        >>> from PIL import Image
+        >>> from src.inpainter import remove_watermark
+        >>> image = Image.open("photo_with_watermark.jpg")
+        >>> mask = Image.open("watermark_mask.png")
+        >>> result = remove_watermark(image, mask, method="lama")
+        >>> result.save("photo_clean.jpg")
     """
     inpainter = Inpainter(model_path=model_path, device=device, method=method)
     return inpainter.inpaint(image, mask)

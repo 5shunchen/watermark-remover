@@ -3,11 +3,21 @@ Watermark Detection Module
 Detects watermarks in images and generates corresponding masks
 """
 
-from typing import Optional, Tuple
+import os
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import cv2
 import numpy as np
 from PIL import Image
+
+# Optional ONNX runtime import
+try:
+    import onnxruntime as ort
+
+    ONNX_AVAILABLE = True
+except ImportError:
+    ort = None
+    ONNX_AVAILABLE = False
 
 
 def detect_watermark_by_color(
@@ -72,11 +82,18 @@ def detect_watermark_by_corner_focus(
     roi_positions = {
         "top-right": (0, int(width * 0.6), int(height * 0.2), int(width * 0.4)),
         "top-left": (0, 0, int(height * 0.2), int(width * 0.4)),
-        "bottom-right": (int(height * 0.8), int(width * 0.6), int(height * 0.2), int(width * 0.4)),
+        "bottom-right": (
+            int(height * 0.8),
+            int(width * 0.6),
+            int(height * 0.2),
+            int(width * 0.4),
+        ),
         "bottom-left": (int(height * 0.8), 0, int(height * 0.2), int(width * 0.4)),
     }
 
-    roi_y, roi_x, roi_h, roi_w = roi_positions.get(focus_area, (0, int(width * 0.6), int(height * 0.2), int(width * 0.4)))
+    roi_y, roi_x, roi_h, roi_w = roi_positions.get(
+        focus_area, (0, int(width * 0.6), int(height * 0.2), int(width * 0.4))
+    )
 
     # Extract ROI
     roi = gray[roi_y : roi_y + roi_h, roi_x : roi_x + roi_w]
@@ -90,7 +107,9 @@ def detect_watermark_by_corner_focus(
     roi_eroded = cv2.erode(roi_dilated, kernel, iterations=1)
 
     # Find contours and filter small noise
-    contours, _ = cv2.findContours(roi_eroded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(
+        roi_eroded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
     roi_cleaned = np.zeros_like(roi_eroded)
     for contour in contours:
         area = cv2.contourArea(contour)
@@ -302,6 +321,210 @@ def detect_watermark_by_template_matching(
     return mask_pil
 
 
+def detect_watermark_by_mser(
+    image: Image.Image,
+    delta: int = 1,
+    min_area: int = 15,
+    max_area: int = 5000,
+    max_variation: float = 0.7,
+    min_diversity: float = 0.2,
+) -> List[Dict[str, Any]]:
+    """
+    Detect text-like watermarks using MSER (Maximally Stable Extremal Regions)
+
+    MSER is particularly effective for detecting text watermarks like "@username"
+    as it finds stable blob-like regions across intensity thresholds.
+
+    Args:
+        image: Input PIL Image
+        delta: Delta parameter for MSER (default: 1)
+        min_area: Minimum region area to keep (default: 15)
+        max_area: Maximum region area to keep (default: 5000)
+        max_variation: Maximum variation threshold (default: 0.7)
+        min_diversity: Minimum diversity threshold (default: 0.2)
+
+    Returns:
+        List of detected watermark regions, each containing:
+        - x, y: Top-left corner coordinates
+        - w, h: Width and height of bounding box
+        - confidence: Detection confidence (0-1)
+        - type: "text" for MSER detection
+    """
+    img_array = np.array(image)
+    if len(img_array.shape) == 3:
+        img_gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+    else:
+        img_gray = img_array.copy()
+
+    height, width = img_gray.shape
+    watermarks: List[Dict[str, Any]] = []
+
+    try:
+        # Create MSER detector
+        # Note: OpenCV Python API uses parameter names without underscore prefix
+        mser = cv2.MSER_create(
+            delta=delta,
+            min_area=min_area,
+            max_area=max_area,
+            max_variation=max_variation,
+            min_diversity=min_diversity,
+        )
+
+        # Detect MSER regions
+        regions, _ = mser.detectRegions(img_gray)
+
+        if len(regions) == 0:
+            return watermarks
+
+        # Convert regions to bounding boxes
+        for region in regions:
+            # Get bounding box from region points
+            x, y, w, h = cv2.boundingRect(region)
+
+            # Filter based on position (watermarks typically in corners or edges)
+            is_corner_or_edge = (
+                y < height * 0.25  # Top quarter
+                or y > height * 0.75  # Bottom quarter
+                or x < width * 0.25  # Left quarter
+                or x > width * 0.75  # Right quarter
+            )
+
+            if not is_corner_or_edge:
+                continue
+
+            # Filter based on aspect ratio (text watermarks are usually horizontal)
+            aspect_ratio = w / h if h > 0 else 0
+            if aspect_ratio > 8 or aspect_ratio < 0.5:
+                continue
+
+            # Calculate confidence based on region properties
+            area = cv2.contourArea(region)
+            rect_area = w * h
+            fill_ratio = area / rect_area if rect_area > 0 else 0
+
+            # Higher confidence for regions with good fill ratio and corner position
+            position_score = 1.0 if (y < height * 0.15 or y > height * 0.85) else 0.7
+            confidence = min(1.0, fill_ratio * position_score + 0.3)
+
+            watermarks.append(
+                {
+                    "x": int(x),
+                    "y": int(y),
+                    "w": int(w),
+                    "h": int(h),
+                    "confidence": round(confidence, 3),
+                    "type": "text",
+                }
+            )
+
+    except Exception as e:
+        print(f"MSER detection warning: {e}")
+
+    # Sort by confidence (highest first)
+    watermarks.sort(key=lambda x: x["confidence"], reverse=True)
+
+    return watermarks
+
+
+def detect_watermark_by_onnx(
+    image: Image.Image,
+    model_path: str = "models/lama.onnx",
+    confidence_threshold: float = 0.5,
+) -> List[Dict[str, Any]]:
+    """
+    Detect watermarks using ONNX deep learning model
+
+    Uses a pre-trained ONNX model for robust watermark detection.
+
+    Args:
+        image: Input PIL Image
+        model_path: Path to ONNX model file
+        confidence_threshold: Minimum confidence threshold (0-1)
+
+    Returns:
+        List of detected watermark regions with x, y, w, h, confidence, type
+    """
+    if not ONNX_AVAILABLE:
+        print("ONNX runtime not available. Install with: pip install onnxruntime")
+        return []
+
+    # Check if model exists
+    if not os.path.exists(model_path):
+        print(f"ONNX model not found at {model_path}")
+        return []
+
+    img_array = np.array(image)
+    if len(img_array.shape) == 3:
+        img_gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+    else:
+        img_gray = img_array.copy()
+
+    height, width = img_gray.shape
+    watermarks: List[Dict[str, Any]] = []
+
+    try:
+        # Load ONNX model
+        session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+
+        # Preprocess image for model
+        input_size = (512, 512)  # Standard input size for most models
+        img_resized = cv2.resize(img_gray, input_size)
+        img_normalized = img_resized.astype(np.float32) / 255.0
+
+        # Add batch and channel dimensions
+        input_tensor = np.expand_dims(np.expand_dims(img_normalized, 0), 0)
+        input_tensor = np.repeat(input_tensor, 3, axis=1)  # Convert to 3 channels
+
+        # Get input/output names
+        input_name = session.get_inputs()[0].name
+        output_name = session.get_outputs()[0].name
+
+        # Run inference
+        outputs = session.run([output_name], {input_name: input_tensor})
+        prediction = outputs[0]
+
+        # Post-process prediction to get watermark mask
+        # Assuming output is a probability mask
+        pred_mask = (prediction[0, 0] > confidence_threshold).astype(np.uint8) * 255
+        pred_mask = cv2.resize(pred_mask, (width, height))
+
+        # Find contours in prediction mask
+        contours, _ = cv2.findContours(
+            pred_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area < 50:  # Filter small noise
+                continue
+
+            x, y, w, h = cv2.boundingRect(contour)
+
+            # Calculate confidence from mean prediction value in region
+            region = prediction[0, 0, y : y + h, x : x + w]
+            confidence = float(np.mean(region))
+
+            if confidence >= confidence_threshold:
+                watermarks.append(
+                    {
+                        "x": int(x),
+                        "y": int(y),
+                        "w": int(w),
+                        "h": int(h),
+                        "confidence": round(confidence, 3),
+                        "type": "deep_learning",
+                    }
+                )
+
+    except Exception as e:
+        print(f"ONNX detection warning: {e}")
+
+    # Sort by confidence (highest first)
+    watermarks.sort(key=lambda x: x["confidence"], reverse=True)
+
+    return watermarks
+
+
 def detect_watermark_by_pattern(image: Image.Image) -> Image.Image:
     """
     General watermark detection based on common patterns (brightness, contrast, position)
@@ -406,7 +629,7 @@ def detect_watermark_by_text(image: Image.Image) -> Image.Image:
 
     # === 2. CLAHE 检测路径 ===
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    roi_gray = gray[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
+    roi_gray = gray[roi_y : roi_y + roi_h, roi_x : roi_x + roi_w]
     roi_enhanced = clahe.apply(roi_gray)
 
     clahe_mask = np.zeros_like(roi_enhanced)
@@ -415,8 +638,8 @@ def detect_watermark_by_text(image: Image.Image) -> Image.Image:
         clahe_mask = cv2.bitwise_or(clahe_mask, binary)
 
     # === 3. HSV 检测路径 ===
-    s_roi = s[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
-    v_roi = v[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
+    s_roi = s[roi_y : roi_y + roi_h, roi_x : roi_x + roi_w]
+    v_roi = v[roi_y : roi_y + roi_h, roi_x : roi_x + roi_w]
 
     _, s_mask = cv2.threshold(s_roi, 70, 255, cv2.THRESH_BINARY_INV)
     _, v_mask = cv2.threshold(v_roi, 150, 255, cv2.THRESH_BINARY)
@@ -474,7 +697,7 @@ def detect_watermark_by_text(image: Image.Image) -> Image.Image:
             _, otsu = cv2.threshold(region, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             roi_mask[y1:y2, x1:x2] = cv2.bitwise_or(roi_mask[y1:y2, x1:x2], otsu)
 
-    mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w] = roi_mask
+    mask[roi_y : roi_y + roi_h, roi_x : roi_x + roi_w] = roi_mask
 
     # === 7. 底部字幕检测 ===
     sub_y = int(height * 0.85)
@@ -587,3 +810,228 @@ def detect_watermark(image: Image.Image, method: str = "auto") -> Image.Image:
             # If anything fails, fall back to edge detection
             print(f"Auto detection warning: {e}")
             return detect_watermark_by_edge(image)
+
+
+def detect_watermark_v2(
+    image: Image.Image,
+    method: str = "auto",
+    model_path: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Main function to detect watermarks and return structured output
+
+    This is the v2 API that returns a list of detected watermark regions
+    with coordinates, confidence, and type information.
+
+    Args:
+        image: Input PIL Image
+        method: Detection method ("color", "edge", "corners", "pattern", "template",
+                "text", "mser", "onnx", "auto")
+        model_path: Path to ONNX model file (only used for "onnx" method)
+
+    Returns:
+        List of detected watermark regions, each containing:
+        - x, y: Top-left corner coordinates
+        - w, h: Width and height of bounding box
+        - confidence: Detection confidence (0-1)
+        - type: Detection type ("text", "deep_learning", "heuristic")
+
+    Example:
+        >>> watermarks = detect_watermark_v2(image, method="mser")
+        >>> for wm in watermarks:
+        ...     print(f"Watermark at ({wm['x']}, {wm['y']}) "
+        ...           f"size {wm['w']}x{wm['h']} confidence {wm['confidence']}")
+    """
+    # Set default model path if not provided
+    if model_path is None:
+        model_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "models",
+            "lama.onnx",
+        )
+
+    if method == "mser":
+        return detect_watermark_by_mser(image)
+    elif method == "onnx":
+        return detect_watermark_by_onnx(image, model_path=model_path)
+    elif method == "text":
+        # Text method now uses MSER
+        return detect_watermark_by_mser(image)
+    elif method == "color":
+        # Convert color mask to regions
+        mask = detect_watermark_by_color(image)
+        return _mask_to_regions(mask)
+    elif method == "edge":
+        mask = detect_watermark_by_edge(image)
+        return _mask_to_regions(mask)
+    elif method == "corners":
+        mask = detect_watermark_by_corners(image)
+        return _mask_to_regions(mask)
+    elif method == "pattern":
+        mask = detect_watermark_by_pattern(image)
+        return _mask_to_regions(mask)
+    elif method == "template":
+        mask = detect_watermark_by_template_matching(image)
+        return _mask_to_regions(mask)
+    elif method == "corner_focus":
+        mask = detect_watermark_by_corner_focus(image)
+        return _mask_to_regions(mask)
+    else:  # auto
+        # Auto mode: try multiple methods and combine results
+        all_regions: List[Dict[str, Any]] = []
+
+        # Try MSER first (best for text watermarks)
+        mser_regions = detect_watermark_by_mser(image)
+        all_regions.extend(mser_regions)
+
+        # Try ONNX if model is available
+        if ONNX_AVAILABLE and os.path.exists(model_path):
+            onnx_regions = detect_watermark_by_onnx(image, model_path=model_path)
+            all_regions.extend(onnx_regions)
+
+        # If no regions found, fall back to heuristic methods
+        if len(all_regions) == 0:
+            # Try edge detection as fallback
+            edge_mask = detect_watermark_by_edge(image)
+            fallback_regions = _mask_to_regions(edge_mask, confidence_offset=0.3)
+            all_regions.extend(fallback_regions)
+
+        # Remove overlapping regions (non-maximum suppression)
+        all_regions = _nms_regions(all_regions)
+
+        return all_regions
+
+
+def _mask_to_regions(
+    mask: Image.Image,
+    confidence_threshold: float = 0.5,
+    confidence_offset: float = 0.0,
+) -> List[Dict[str, Any]]:
+    """
+    Convert a binary mask image to region list format
+
+    Args:
+        mask: Binary mask PIL Image (255 for watermark, 0 for background)
+        confidence_threshold: Minimum area threshold
+        confidence_offset: Offset to add to confidence scores
+
+    Returns:
+        List of detected regions with x, y, w, h, confidence, type
+    """
+    mask_array = np.array(mask)
+    height, width = mask_array.shape
+
+    # Find contours
+    contours, _ = cv2.findContours(
+        mask_array, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+
+    regions: List[Dict[str, Any]] = []
+
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area < 20:  # Filter small noise
+            continue
+
+        x, y, w, h = cv2.boundingRect(contour)
+
+        # Calculate confidence based on area and position
+        area_score = min(1.0, area / 500)
+
+        # Higher confidence for corner/edge positions
+        is_corner = (
+            y < height * 0.2 or y > height * 0.8 or x < width * 0.2 or x > width * 0.8
+        )
+        position_score = 0.8 if is_corner else 0.5
+
+        confidence = min(1.0, (area_score + position_score) / 2 + confidence_offset)
+
+        regions.append(
+            {
+                "x": int(x),
+                "y": int(y),
+                "w": int(w),
+                "h": int(h),
+                "confidence": round(confidence, 3),
+                "type": "heuristic",
+            }
+        )
+
+    # Sort by confidence
+    regions.sort(key=lambda x: x["confidence"], reverse=True)
+
+    return regions
+
+
+def _nms_regions(
+    regions: List[Dict[str, Any]],
+    iou_threshold: float = 0.5,
+) -> List[Dict[str, Any]]:
+    """
+    Apply non-maximum suppression to remove overlapping regions
+
+    Args:
+        regions: List of watermark regions
+        iou_threshold: IoU threshold for merging
+
+    Returns:
+        Filtered list of non-overlapping regions
+    """
+    if len(regions) <= 1:
+        return regions
+
+    # Sort by confidence (highest first)
+    regions = sorted(regions, key=lambda x: x["confidence"], reverse=True)
+
+    keep: List[Dict[str, Any]] = []
+
+    while len(regions) > 0:
+        # Take the region with highest confidence
+        current = regions.pop(0)
+        keep.append(current)
+
+        # Remove regions with high IoU
+        remaining = []
+        for region in regions:
+            iou = _calculate_iou(current, region)
+            if iou < iou_threshold:
+                remaining.append(region)
+        regions = remaining
+
+    return keep
+
+
+def _calculate_iou(
+    box1: Dict[str, Any],
+    box2: Dict[str, Any],
+) -> float:
+    """
+    Calculate Intersection over Union between two bounding boxes
+
+    Args:
+        box1: First box with x, y, w, h
+        box2: Second box with x, y, w, h
+
+    Returns:
+        IoU value between 0 and 1
+    """
+    x1, y1, w1, h1 = box1["x"], box1["y"], box1["w"], box1["h"]
+    x2, y2, w2, h2 = box2["x"], box2["y"], box2["w"], box2["h"]
+
+    # Calculate intersection
+    xi1 = max(x1, x2)
+    yi1 = max(y1, y2)
+    xi2 = min(x1 + w1, x2 + w2)
+    yi2 = min(y1 + h1, y2 + h2)
+
+    inter_area = max(0, xi2 - xi1) * max(0, yi2 - yi1)
+
+    # Calculate union
+    box1_area = w1 * h1
+    box2_area = w2 * h2
+    union_area = box1_area + box2_area - inter_area
+
+    # Calculate IoU
+    iou = inter_area / union_area if union_area > 0 else 0
+
+    return iou

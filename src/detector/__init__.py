@@ -395,54 +395,93 @@ def detect_watermark_by_text(image: Image.Image) -> Image.Image:
     height, width = gray.shape
     mask = np.zeros((height, width), dtype=np.uint8)
 
-    # === 1. MSER-like text detection ===
-    # Use multiple thresholds to detect stable text regions
-    for thresh_val in [200, 220, 240]:
-        _, binary = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY)
+    # === 1. 增强型右上角文字检测 ===
+    # 扩大检测区域：右上角 30% 宽度 x 25% 高度
+    roi_x = int(width * 0.5)
+    roi_y = 0
+    roi_w = int(width * 0.5)
+    roi_h = int(height * 0.25)
 
-        # Find contours
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    roi = gray[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
+
+    # 多阈值检测 - 降低阈值捕捉更淡的文字
+    for thresh_val in [150, 170, 190, 210]:
+        _, roi_binary = cv2.threshold(roi, thresh_val, 255, cv2.THRESH_BINARY)
+
+        # 形态学膨胀连接文字笔画
+        kernel = np.ones((3, 3), np.uint8)
+        roi_dilated = cv2.dilate(roi_binary, kernel, iterations=2)
+
+        # 找到轮廓
+        contours, _ = cv2.findContours(roi_dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         for contour in contours:
             area = cv2.contourArea(contour)
             x, y, w, h = cv2.boundingRect(contour)
 
-            # Text-like characteristics:
-            # - Area in reasonable range (not too small, not too large)
-            # - Aspect ratio typical of text
-            # - Located in corners (especially top-right)
+            # 放宽面积和长宽比限制
+            if 20 < area < 10000 and 0.1 < w / h < 10:
+                # 绘制到 ROI mask
+                roi_mask = np.zeros_like(roi_dilated)
+                cv2.drawContours(roi_mask, [contour], -1, (255), -1)
+                # 合并到总 mask
+                mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w] = cv2.bitwise_or(
+                    mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w], roi_mask
+                )
 
-            is_in_corner = (
-                (y < height * 0.25 and x > width * 0.5) or  # Top-right
-                (y < height * 0.25 and x < width * 0.25) or  # Top-left
-                (y > height * 0.85)  # Bottom (subtitles)
-            )
+    # === 2. 全图范围的亮度异常检测 ===
+    # 检测比背景亮的文字区域
+    _, bright_mask = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
 
-            if (
-                50 < area < 5000
-                and 0.2 < w / h < 5
-                and is_in_corner
-            ):
-                cv2.drawContours(mask, [contour], -1, (255), -1)
+    # 形态学操作连接区域
+    kernel = np.ones((5, 5), np.uint8)
+    bright_dilated = cv2.dilate(bright_mask, kernel, iterations=2)
+    bright_eroded = cv2.erode(bright_dilated, kernel, iterations=1)
 
-    # === 2. High-frequency detail detection (for semi-transparent watermarks) ===
-    # Laplacian to find sharp transitions
-    laplacian = cv2.Laplacian(gray, cv2.CV_64F)
-    laplacian_abs = np.absolute(laplacian)
-    laplacian_uint8 = cv2.convertScaleAbs(laplacian_abs)
+    # 只保留角落区域（避免误检主体内容）
+    corner_mask = np.zeros_like(bright_eroded)
+    # 右上角
+    corner_mask[0:int(height*0.3), int(width*0.5):] = bright_eroded[0:int(height*0.3), int(width*0.5):]
+    # 左上角
+    corner_mask[0:int(height*0.3), :int(width*0.3)] = bright_eroded[0:int(height*0.3), :int(width*0.3)]
+    # 右下角
+    corner_mask[int(height*0.7):, int(width*0.5):] = bright_eroded[int(height*0.7):, int(width*0.5):]
+    # 左下角
+    corner_mask[int(height*0.7):, :int(width*0.3)] = bright_eroded[int(height*0.7):, :int(width*0.3)]
 
-    _, lap_mask = cv2.threshold(laplacian_uint8, 100, 255, cv2.THRESH_BINARY)
+    mask = cv2.bitwise_or(mask, corner_mask)
 
-    # Focus on top-right corner for laplacian detection
-    lap_mask[0 : int(height * 0.3), int(width * 0.5) :] = lap_mask[
-        0 : int(height * 0.3), int(width * 0.5) :
-    ]
+    # === 3. 底部字幕检测（保持原有逻辑）===
+    sub_y = int(height * 0.85)
+    subtitle_roi = gray[sub_y:, :]
 
-    # === 3. Combine masks ===
-    mask = cv2.bitwise_or(mask, lap_mask)
+    for thresh_val in [160, 180, 200]:
+        _, sub_binary = cv2.threshold(subtitle_roi, thresh_val, 255, cv2.THRESH_BINARY)
+        sub_kernel = np.ones((5, 5), np.uint8)
+        sub_dilated = cv2.dilate(sub_binary, sub_kernel, iterations=2)
+        sub_eroded = cv2.erode(sub_dilated, sub_kernel, iterations=1)
+        mask[sub_y:, :] = cv2.bitwise_or(mask[sub_y:, :], sub_eroded)
 
-    # === 4. Morphological cleanup ===
-    kernel = np.ones((3, 3), np.uint8)
+    # === 4. 边缘检测增强（捕捉半透明水印）===
+    # Canny 边缘检测
+    edges = cv2.Canny(gray, 50, 150)
+
+    # 只保留边缘密度高的区域
+    edge_kernel = np.ones((7, 7), np.uint8)
+    edge_dilated = cv2.dilate(edges, edge_kernel, iterations=2)
+
+    # 边缘密度阈值
+    _, edge_mask = cv2.threshold(edge_dilated, 100, 255, cv2.THRESH_BINARY)
+
+    # 同样只保留角落区域
+    edge_corner_mask = np.zeros_like(edge_mask)
+    edge_corner_mask[0:int(height*0.3), int(width*0.5):] = edge_mask[0:int(height*0.3), int(width*0.5):]
+    edge_corner_mask[int(height*0.85):, :] = edge_mask[int(height*0.85):, :]
+
+    mask = cv2.bitwise_or(mask, edge_corner_mask)
+
+    # === 5. 最终形态学清理 ===
+    kernel = np.ones((5, 5), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 

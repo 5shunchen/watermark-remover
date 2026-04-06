@@ -177,6 +177,44 @@ echo -e "\n完成！"
 - **ReDoc**: http://localhost:8000/redoc
 - **自定义文档**: http://localhost:8000/api-docs
 
+## 视频处理
+
+### 上传视频
+
+```bash
+# 上传视频文件
+UPLOAD_RESPONSE=$(curl -X POST http://localhost:8000/api/v1/upload-video \
+  -F "file=@video.mp4")
+
+FILE_ID=$(echo $UPLOAD_RESPONSE | jq -r '.file_id')
+echo "文件 ID: $FILE_ID"
+```
+
+### 处理视频
+
+```bash
+# 开始处理视频
+curl -X POST http://localhost:8000/api/v1/process-video/$FILE_ID \
+  -F "detection_method=auto" \
+  -F "frame_interval=1" \
+  -F "quality=high"
+```
+
+### 查询处理进度
+
+```bash
+# 轮询任务状态
+curl http://localhost:8000/api/v1/video-status/{job_id}
+```
+
+### 下载处理后的视频
+
+```bash
+# 下载处理完成的视频
+curl http://localhost:8000/api/v1/download-video/processed_{file_id}.mp4 \
+  -o output.mp4
+```
+
 ## 错误处理
 
 API 返回标准 HTTP 状态码：

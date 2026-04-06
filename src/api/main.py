@@ -8,10 +8,12 @@ import io
 import os
 import tempfile
 import uuid
+from pathlib import Path
 from typing import Optional
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
 # Import using absolute imports
@@ -20,6 +22,21 @@ from src.inpainter import remove_watermark
 from src.video import remove_watermark_from_video
 
 app = FastAPI(title="Watermark Remover API", version="1.0.0")
+
+# Get the project root directory
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+# Mount static files
+app.mount("/static", StaticFiles(directory=PROJECT_ROOT / "static"), name="static")
+
+
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    """Serve the landing page"""
+    html_path = PROJECT_ROOT / "templates" / "index.html"
+    if html_path.exists():
+        return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>Watermark Remover</h1><p>Landing page not found</p>")
 
 
 @app.get("/")

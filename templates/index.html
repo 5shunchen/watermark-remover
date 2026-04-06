@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Watermark Remover - 智能去水印工具</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container nav-container">
+            <a href="#" class="logo">
+                <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+                </svg>
+                <span class="logo-text">Watermark Remover</span>
+            </a>
+            <button class="nav-toggle" aria-label="Toggle navigation" aria-expanded="false">
+                <span class="nav-toggle-bar"></span>
+                <span class="nav-toggle-bar"></span>
+                <span class="nav-toggle-bar"></span>
+            </button>
+            <ul class="nav-links">
+                <li><a href="#features">功能</a></li>
+                <li><a href="#demo">在线体验</a></li>
+                <li><a href="#api">API</a></li>
+                <li><a href="https://github.com/5shunchen/watermark-remover" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <h1 class="hero-title">
+                智能去除图片<br>
+                <span class="gradient-text">和视频水印</span>
+            </h1>
+            <p class="hero-subtitle">
+                基于先进的 AI inpainting 技术，一键消除水印，还原纯净画面
+            </p>
+            <div class="hero-buttons">
+                <a href="#demo" class="btn btn-primary">免费试用</a>
+                <a href="#api" class="btn btn-secondary">查看文档</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <h2 class="section-title">核心功能</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <polyline points="21 15 16 10 5 21"/>
+                        </svg>
+                    </div>
+                    <h3>图片去水印</h3>
+                    <p>支持多种图片格式，智能识别并去除各种类型的水印</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+                            <line x1="7" y1="2" x2="7" y2="22"/>
+                            <line x1="17" y1="2" x2="17" y2="22"/>
+                            <line x1="2" y1="12" x2="22" y2="12"/>
+                            <line x1="2" y1="7" x2="7" y2="7"/>
+                            <line x1="2" y1="17" x2="7" y2="17"/>
+                            <line x1="17" y1="17" x2="22" y2="17"/>
+                            <line x1="17" y1="7" x2="22" y2="7"/>
+                        </svg>
+                    </div>
+                    <h3>视频去水印</h3>
+                    <p>逐帧处理视频，保持画面流畅，去除动态水印</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"/>
+                            <circle cx="7.5" cy="14.5" r="1.5"/>
+                            <circle cx="16.5" cy="14.5" r="1.5"/>
+                        </svg>
+                    </div>
+                    <h3>AI 智能检测</h3>
+                    <p>自动识别水印位置，无需手动标注，省时省力</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                        </svg>
+                    </div>
+                    <h3>快速处理</h3>
+                    <p>优化的推理引擎，秒级处理，立等可取</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Demo Section -->
+    <section id="demo" class="demo">
+        <div class="container">
+            <h2 class="section-title">在线体验</h2>
+            <div class="demo-container">
+                <div class="upload-area" id="uploadArea" role="button" tabindex="0" aria-label="Upload image file">
+                    <div class="upload-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                    </div>
+                    <p class="upload-text">拖拽文件到此处，或点击选择文件</p>
+                    <p class="upload-hint">支持 JPG、PNG 格式图片</p>
+                    <input type="file" id="fileInput" accept="image/*" hidden>
+                </div>
+                <div class="preview-container" id="previewContainer" style="display: none;">
+                    <div class="preview-panel">
+                        <h4>原图</h4>
+                        <div class="image-wrapper">
+                            <img id="originalImage" src="" alt="原始图片">
+                        </div>
+                    </div>
+                    <div class="preview-panel">
+                        <h4>处理后</h4>
+                        <div class="image-wrapper">
+                            <img id="processedImage" src="" alt="处理后的图片">
+                        </div>
+                    </div>
+                </div>
+                <div class="processing-status" id="processingStatus" style="display: none;">
+                    <div class="spinner" aria-hidden="true"></div>
+                    <p>正在处理中，请稍候...</p>
+                </div>
+                <div class="demo-actions" id="demoActions" style="display: none;">
+                    <button class="btn btn-primary" id="downloadBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:18px;height:18px;margin-right:8px;">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        下载结果
+                    </button>
+                    <button class="btn btn-secondary" id="resetBtn">重新上传</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section id="how-it-works" class="how-it-works">
+        <div class="container">
+            <h2 class="section-title">工作原理</h2>
+            <div class="steps-container">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h3>上传图片</h3>
+                    <p>选择需要处理的图片，支持拖拽上传</p>
+                </div>
+                <div class="step-connector" aria-hidden="true">
+                    <svg viewBox="0 0 100 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="0" y1="12" x2="80" y2="12"/>
+                        <polyline points="70 6 80 12 70 18"/>
+                    </svg>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h3>AI 检测</h3>
+                    <p>智能识别水印位置，生成精确 mask</p>
+                </div>
+                <div class="step-connector" aria-hidden="true">
+                    <svg viewBox="0 0 100 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="0" y1="12" x2="80" y2="12"/>
+                        <polyline points="70 6 80 12 70 18"/>
+                    </svg>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h3>一键去除</h3>
+                    <p>AI inpainting 技术智能修复，下载成品</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- API Section -->
+    <section id="api" class="api">
+        <div class="container">
+            <h2 class="section-title">API 文档</h2>
+            <div class="api-container">
+                <div class="api-code">
+                    <pre><code><span class="comment"># 图片去水印</span>
+<span class="method">POST</span> <span class="path">/remove/</span>
+<span class="header">Content-Type: multipart/form-data</span>
+
+file: &lt;image file&gt;
+detection_method: auto
+device: cpu
+
+<span class="comment"># 视频去水印</span>
+<span class="method">POST</span> <span class="path">/remove-video/</span>
+<span class="header">Content-Type: multipart/form-data</span>
+
+file: &lt;video file&gt;
+detection_method: auto
+device: cpu
+
+<span class="comment"># 完整处理（检测 + 去水印）</span>
+<span class="method">POST</span> <span class="path">/process/</span>
+<span class="header">Content-Type: multipart/form-data</span>
+
+file: &lt;image file&gt;
+detection_method: auto
+device: cpu</code></pre>
+                </div>
+            </div>
+            <a href="/docs" class="btn btn-primary" target="_blank" rel="noopener noreferrer">完整 API 文档</a>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2026 Watermark Remover. Powered by AI Inpainting Technology.</p>
+            <div class="footer-links">
+                <a href="https://github.com/5shunchen/watermark-remover" target="_blank" rel="noopener noreferrer">GitHub</a>
+                <a href="/docs" target="_blank" rel="noopener noreferrer">API Docs</a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

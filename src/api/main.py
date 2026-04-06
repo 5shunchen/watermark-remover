@@ -41,9 +41,10 @@ async def root():
     )
 
 
-@app.get("/")
-async def root():
-    return {"message": "Watermark Remover API", "version": "1.0.0"}
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "ok", "version": "1.0.0"}
 
 
 @app.post("/detect/")

@@ -1,0 +1,36 @@
+# Python virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Testing
+.pytest_cache/
+
+# Project output directories
+output/
+reports/
+
+# Test images
+*.png
+*.jpg
+*.jpeg
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Config files
+pyrightconfig.json

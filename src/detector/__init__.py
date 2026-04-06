@@ -395,59 +395,52 @@ def detect_watermark_by_text(image: Image.Image) -> Image.Image:
     height, width = gray.shape
     mask = np.zeros((height, width), dtype=np.uint8)
 
-    # === 1. 右上角水印精确检测 ===
-    # ROI: 右上角 30% 宽度 x 15% 高度
-    roi_x = int(width * 0.6)
+    # === 1. 右上角水印检测 - 聚焦底部区域 ===
+    # ROI: 右上角 40% 宽度 x 20% 高度，但重点检测底部 50%
+    roi_x = int(width * 0.55)
     roi_y = 0
-    roi_w = int(width * 0.4)
-    roi_h = int(height * 0.15)
+    roi_w = int(width * 0.45)
+    roi_h = int(height * 0.20)
 
     roi = gray[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
+    roi_h_inner, roi_w_inner = roi.shape
 
-    # 计算 ROI 的局部统计特性
-    roi_mean = np.mean(roi)
-    roi_std = np.std(roi)
+    # 重点检测 ROI 的下半部分（水印通常在这里）
+    roi_focus = roi[int(roi_h_inner * 0.3):, :]
 
-    # 使用 Otsu 自适应阈值
-    otsu_result, _ = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    otsu_thresh = int(otsu_result)
-
-    # 多阈值检测 - 捕捉不同亮度的文字
-    detected = False
-    for thresh_val in [int(roi_mean + roi_std), int(roi_mean + 1.5 * roi_std), otsu_thresh, 180, 200]:
-        if detected:
-            break
-        _, roi_binary = cv2.threshold(roi, int(thresh_val), 255, cv2.THRESH_BINARY)
+    # 多阈值检测 - 从低阈值开始捕捉暗淡的文字
+    for thresh_val in [100, 120, 140, 160, 180]:
+        _, roi_binary = cv2.threshold(roi_focus, thresh_val, 255, cv2.THRESH_BINARY)
 
         # 形态学膨胀连接文字笔画
         kernel = np.ones((3, 3), np.uint8)
         roi_dilated = cv2.dilate(roi_binary, kernel, iterations=2)
+        roi_eroded = cv2.erode(roi_dilated, kernel, iterations=1)
 
         # 找到轮廓
-        contours, _ = cv2.findContours(roi_dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(roi_eroded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         for contour in contours:
             area = cv2.contourArea(contour)
             x_rect, y_rect, w, h = cv2.boundingRect(contour)
 
             # 文字特征：合理的面积和长宽比
-            if 20 < area < 8000 and 0.2 < w / h < 12:
-                # 绘制到 ROI mask
-                roi_mask = np.zeros_like(roi_dilated)
+            if 10 < area < 5000 and 0.2 < w / h < 15:
+                # 绘制到 ROI mask（注意 y 坐标偏移）
+                roi_mask = np.zeros_like(roi_eroded)
                 cv2.drawContours(roi_mask, [contour], -1, (255), -1)
-                # 合并到总 mask
-                mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w] = cv2.bitwise_or(
-                    mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w], roi_mask
+                # 合并到总 mask（注意 y 坐标偏移）
+                mask[roi_y + int(roi_h_inner * 0.3):roi_y + roi_h, roi_x:roi_x + roi_w] = cv2.bitwise_or(
+                    mask[roi_y + int(roi_h_inner * 0.3):roi_y + roi_h, roi_x:roi_x + roi_w], roi_mask
                 )
-                detected = True
 
-    # === 2. 颜色空间检测 - HSV 中检测低饱和度高亮度区域 ===
+    # === 2. HSV 颜色空间检测 - 低饱和度高亮度区域 ===
     hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
     h, s, v = cv2.split(hsv)
 
-    # 水印通常是低饱和度 + 高亮度
-    _, v_mask = cv2.threshold(v, 200, 255, cv2.THRESH_BINARY)
-    _, s_mask = cv2.threshold(s, 50, 255, cv2.THRESH_BINARY_INV)
+    # 水印通常是低饱和度 + 相对较高亮度
+    _, v_mask = cv2.threshold(v, 150, 255, cv2.THRESH_BINARY)
+    _, s_mask = cv2.threshold(s, 80, 255, cv2.THRESH_BINARY_INV)
 
     # 结合两个条件
     color_mask = cv2.bitwise_and(v_mask, s_mask)
@@ -460,7 +453,7 @@ def detect_watermark_by_text(image: Image.Image) -> Image.Image:
 
     for contour in contours:
         area = cv2.contourArea(contour)
-        if 20 < area < 8000:
+        if 10 < area < 5000:
             cv2.drawContours(mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w],
                            [contour], -1, (255), -1)
 
@@ -468,7 +461,7 @@ def detect_watermark_by_text(image: Image.Image) -> Image.Image:
     sub_y = int(height * 0.85)
     subtitle_roi = gray[sub_y:, :]
 
-    for thresh_val in [160, 180, 200]:
+    for thresh_val in [150, 170, 190]:
         _, sub_binary = cv2.threshold(subtitle_roi, thresh_val, 255, cv2.THRESH_BINARY)
         sub_kernel = np.ones((5, 5), np.uint8)
         sub_dilated = cv2.dilate(sub_binary, sub_kernel, iterations=2)

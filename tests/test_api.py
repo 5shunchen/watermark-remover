@@ -32,11 +32,8 @@ def test_root_endpoint():
     """Test root endpoint"""
     response = client.get("/")
     assert response.status_code == 200
-
-    data = response.json()
-    assert "message" in data
-    assert "Watermark Remover API" in data["message"]
-    assert "version" in data
+    # Root returns HTML, not JSON
+    assert "Watermark Remover" in response.text or "watermark" in response.text.lower()
 
 
 def test_detect_watermark_endpoint():
@@ -44,13 +41,18 @@ def test_detect_watermark_endpoint():
     # Create test image bytes
     img_bytes = create_test_image_bytes()
 
-    # Send request
+    # Send request to /api/v1/process (process endpoint returns JSON response)
     response = client.post(
-        "/detect/", files={"file": ("test.png", img_bytes, "image/png")}
+        "/api/v1/process",
+        files={"file": ("test.png", img_bytes, "image/png")},
+        data={"detection_method": "auto"},
     )
 
-    # Should return 200 OK (or possibly a redirect for file response)
-    assert response.status_code in [200, 307]
+    # Should return 200 OK with JSON response
+    assert response.status_code == 200
+    data = response.json()
+    assert data.get("success") == True
+    assert "output_url" in data or "download_url" in data
 
 
 def test_remove_watermark_endpoint():
@@ -58,15 +60,15 @@ def test_remove_watermark_endpoint():
     # Create test image bytes
     img_bytes = create_test_image_bytes()
 
-    # Send request
+    # Send request to /api/v1/process
     response = client.post(
-        "/remove/",
+        "/api/v1/process",
         files={"file": ("test.png", img_bytes, "image/png")},
         data={"detection_method": "auto", "device": "cpu"},
     )
 
-    # Should return 200 OK (or possibly a redirect for file response)
-    assert response.status_code in [200, 307]
+    # Should return 200 OK
+    assert response.status_code == 200
 
 
 def test_process_image_endpoint():
@@ -74,15 +76,15 @@ def test_process_image_endpoint():
     # Create test image bytes
     img_bytes = create_test_image_bytes()
 
-    # Send request
+    # Send request to /api/v1/process
     response = client.post(
-        "/process/",
+        "/api/v1/process",
         files={"file": ("test.png", img_bytes, "image/png")},
         data={"detection_method": "auto", "device": "cpu"},
     )
 
-    # Should return 200 OK (or possibly a redirect for file response)
-    assert response.status_code in [200, 307]
+    # Should return 200 OK
+    assert response.status_code == 200
 
 
 def test_api_validation():
@@ -91,10 +93,10 @@ def test_api_validation():
     img_bytes = create_test_image_bytes()
 
     response = client.post(
-        "/remove/",
+        "/api/v1/process",
         files={"file": ("test.png", img_bytes, "image/png")},
         data={"detection_method": "invalid_method", "device": "cpu"},
     )
 
     # Even with invalid method, it should still process (falling back to default)
-    assert response.status_code in [200, 307, 422]
+    assert response.status_code == 200

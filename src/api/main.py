@@ -3,13 +3,10 @@ FastAPI Interface for Watermark Removal
 Provides REST API endpoints for watermark detection and removal
 """
 
-import asyncio
 import io
 import os
-import tempfile
 import uuid
 from pathlib import Path
-from typing import Optional
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse

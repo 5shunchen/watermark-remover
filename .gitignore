@@ -34,3 +34,6 @@ Thumbs.db
 
 # Config files
 pyrightconfig.json
+
+# Claude Code configuration (local settings, hooks, agents)
+.claude/

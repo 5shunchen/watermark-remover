@@ -47,6 +47,75 @@ def detect_watermark_by_color(
     return mask_pil
 
 
+def detect_watermark_by_corner_focus(
+    image: Image.Image,
+    focus_area: str = "top-right",
+) -> Image.Image:
+    """
+    Detect watermark with focus on corner areas (where watermarks commonly appear)
+
+    Args:
+        image: Input PIL Image
+        focus_area: Area to focus on ("top-right", "top-left", "bottom-right", "bottom-left")
+
+    Returns:
+        PIL Image mask with detected watermark areas
+    """
+    img_array = np.array(image)
+    img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+
+    height, width = gray.shape
+    mask = np.zeros((height, width), dtype=np.uint8)
+
+    # Define ROI based on focus area
+    roi_positions = {
+        "top-right": (0, int(width * 0.6), int(height * 0.2), int(width * 0.4)),
+        "top-left": (0, 0, int(height * 0.2), int(width * 0.4)),
+        "bottom-right": (int(height * 0.8), int(width * 0.6), int(height * 0.2), int(width * 0.4)),
+        "bottom-left": (int(height * 0.8), 0, int(height * 0.2), int(width * 0.4)),
+    }
+
+    roi_y, roi_x, roi_h, roi_w = roi_positions.get(focus_area, (0, int(width * 0.6), int(height * 0.2), int(width * 0.4)))
+
+    # Extract ROI
+    roi = gray[roi_y : roi_y + roi_h, roi_x : roi_x + roi_w]
+
+    # Detect bright text (common for watermarks)
+    _, roi_thresh = cv2.threshold(roi, 180, 255, cv2.THRESH_BINARY)
+
+    # Morphological operations to connect text strokes
+    kernel = np.ones((3, 3), np.uint8)
+    roi_dilated = cv2.dilate(roi_thresh, kernel, iterations=2)
+    roi_eroded = cv2.erode(roi_dilated, kernel, iterations=1)
+
+    # Find contours and filter small noise
+    contours, _ = cv2.findContours(roi_eroded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    roi_cleaned = np.zeros_like(roi_eroded)
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area > 20:  # Filter small noise
+            cv2.drawContours(roi_cleaned, [contour], -1, (255), -1)
+
+    # Copy to full mask
+    mask[roi_y : roi_y + roi_h, roi_x : roi_x + roi_w] = roi_cleaned
+
+    # Also detect bottom subtitles (12% from bottom)
+    sub_y = int(height * 0.88)
+    subtitle_roi = gray[sub_y:, :]
+    _, sub_thresh = cv2.threshold(subtitle_roi, 200, 255, cv2.THRESH_BINARY)
+
+    sub_kernel = np.ones((5, 5), np.uint8)
+    sub_dilated = cv2.dilate(sub_thresh, sub_kernel, iterations=2)
+    sub_eroded = cv2.erode(sub_dilated, sub_kernel, iterations=1)
+    mask[sub_y:, :] = sub_eroded
+
+    # Clean up
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+
+    return Image.fromarray(mask)
+
+
 def detect_watermark_by_edge(
     image: Image.Image, edge_threshold: int = 50
 ) -> Image.Image:

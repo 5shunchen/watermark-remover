@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API 文档 - Watermark Remover</title>
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --primary-dark: #2563eb;
+            --text: #1e293b;
+            --text-light: #64748b;
+            --bg: #f8fafc;
+            --border: #e2e8f0;
+            --code-bg: #1e293b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--text);
+            background: var(--bg);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Header */
+        .header {
+            background: white;
+            border-bottom: 1px solid var(--border);
+            padding: 20px 0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            color: var(--primary);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 24px;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: var(--text-light);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--primary);
+        }
+
+        /* Hero */
+        .api-hero {
+            padding: 80px 0;
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+            text-align: center;
+        }
+
+        .api-hero h1 {
+            font-size: 2.5rem;
+            margin-bottom: 16px;
+        }
+
+        .api-hero p {
+            font-size: 1.125rem;
+            color: var(--text-light);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .api-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            margin-top: 32px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        /* Endpoints */
+        .endpoints {
+            padding: 60px 0;
+        }
+
+        .endpoint-group {
+            margin-bottom: 48px;
+        }
+
+        .group-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid var(--primary);
+        }
+
+        .endpoint-card {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 16px;
+        }
+
+        .endpoint-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .method {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 0.875rem;
+        }
+
+        .method-get {
+            background: #22c55e20;
+            color: #22c55e;
+        }
+
+        .method-post {
+            background: #3b82f620;
+            color: #3b82f6;
+        }
+
+        .method-delete {
+            background: #ef444420;
+            color: #ef4444;
+        }
+
+        .endpoint-path {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 1rem;
+            color: var(--text);
+        }
+
+        .endpoint-description {
+            color: var(--text-light);
+            margin-bottom: 16px;
+        }
+
+        .parameters {
+            background: var(--bg);
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .parameters-title {
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .param-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .param-table th,
+        .param-table td {
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .param-table th {
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: var(--text-light);
+        }
+
+        .param-name {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            color: var(--primary);
+        }
+
+        .param-type {
+            font-size: 0.875rem;
+            color: var(--text-light);
+        }
+
+        /* Code Example */
+        .code-example {
+            background: var(--code-bg);
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 16px;
+            overflow-x: auto;
+        }
+
+        .code-example pre {
+            margin: 0;
+        }
+
+        .code-example code {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.875rem;
+            line-height: 1.8;
+            color: #e2e8f0;
+        }
+
+        .code-comment {
+            color: #64748b;
+        }
+
+        .code-string {
+            color: #86efac;
+        }
+
+        /* Footer */
+        .footer {
+            background: white;
+            border-top: 1px solid var(--border);
+            padding: 40px 0;
+            text-align: center;
+            color: var(--text-light);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .api-hero h1 {
+                font-size: 1.75rem;
+            }
+
+            .nav-links {
+                display: none;
+            }
+
+            .endpoint-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container header-content">
+            <a href="/" class="logo">
+                <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+                </svg>
+                <span>Watermark Remover</span>
+            </a>
+            <ul class="nav-links">
+                <li><a href="/">首页</a></li>
+                <li><a href="/#demo">在线体验</a></li>
+                <li><a href="/docs">API 文档</a></li>
+                <li><a href="https://github.com/5shunchen/watermark-remover" target="_blank">GitHub</a></li>
+            </ul>
+        </div>
+    </header>
+
+    <!-- Hero -->
+    <section class="api-hero">
+        <div class="container">
+            <h1>API 文档</h1>
+            <p>完整的 RESTful API，轻松集成到您的应用中</p>
+            <div class="api-buttons">
+                <a href="/docs" class="btn btn-primary">Swagger UI</a>
+                <a href="/redoc" class="btn btn-secondary">ReDoc</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Endpoints -->
+    <section class="endpoints">
+        <div class="container">
+            <h2 style="margin-bottom: 32px; font-size: 2rem;">API 端点</h2>
+
+            <!-- Health Endpoints -->
+            <div class="endpoint-group">
+                <h3 class="group-title">健康检查</h3>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <span class="method method-get">GET</span>
+                        <code class="endpoint-path">/api/v1/health</code>
+                    </div>
+                    <p class="endpoint-description">检查 API 健康状态，返回版本和各服务组件状态。</p>
+                    <div class="code-example">
+                        <pre><code><span class="code-comment"># 请求示例</span>
+curl -X GET http://localhost:8000/api/v1/health
+
+<span class="code-comment"># 响应</span>
+{
+  <span class="code-string">"status"</span>: <span class="code-string">"healthy"</span>,
+  <span class="code-string">"version"</span>: <span class="code-string">"2.0.0"</span>,
+  <span class="code-string">"timestamp"</span>: <span class="code-string">"2026-04-06T12:00:00"</span>,
+  <span class="code-string">"services"</span>: {
+    <span class="code-string">"detector"</span>: <span class="code-string">"ok"</span>,
+    <span class="code-string">"inpainter"</span>: <span class="code-string">"ok"</span>,
+    <span class="code-string">"storage"</span>: <span class="code-string">"ok"</span>
+  }
+}</code></pre>
+                    </div>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <span class="method method-get">GET</span>
+                        <code class="endpoint-path">/api/v1/stats</code>
+                    </div>
+                    <p class="endpoint-description">获取使用统计信息，包括总处理数、今日处理数等。</p>
+                </div>
+            </div>
+
+            <!-- File Upload Endpoints -->
+            <div class="endpoint-group">
+                <h3 class="group-title">文件管理</h3>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <span class="method method-post">POST</span>
+                        <code class="endpoint-path">/api/v1/upload</code>
+                    </div>
+                    <p class="endpoint-description">上传文件用于处理，返回文件 ID 用于后续处理。</p>
+                    <div class="parameters">
+                        <p class="parameters-title">请求参数</p>
+                        <table class="param-table">
+                            <tr>
+                                <th>参数</th>
+                                <th>类型</th>
+                                <th>必填</th>
+                                <th>说明</th>
+                            </tr>
+                            <tr>
+                                <td><span class="param-name">file</span></td>
+                                <td><span class="param-type">file</span></td>
+                                <td>是</td>
+                                <td>图片文件 (JPG/PNG/WebP/GIF)</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="code-example">
+                        <pre><code><span class="code-comment"># cURL 示例</span>
+curl -X POST http://localhost:8000/api/v1/upload \
+  -F <span class="code-string">"file=@image.jpg"</span>
+
+<span class="code-comment"># 响应</span>
+{
+  <span class="code-string">"success"</span>: <span class="code-string">true</span>,
+  <span class="code-string">"file_id"</span>: <span class="code-string">"550e8400-e29b-41d4-a716-446655440000"</span>,
+  <span class="code-string">"filename"</span>: <span class="code-string">"image.jpg"</span>,
+  <span class="code-string">"size"</span>: <span class="code-string">1024576</span>
+}</code></pre>
+                    </div>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <span class="method method-get">GET</span>
+                        <code class="endpoint-path">/api/v1/files</code>
+                    </div>
+                    <p class="endpoint-description">列出所有已上传的文件。</p>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <span class="method method-get">GET</span>
+                        <code class="endpoint-path">/api/v1/files/{file_id}</code>
+                    </div>
+                    <p class="endpoint-description">获取指定文件的详细信息。</p>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <span class="method method-delete">DELETE</span>
+                        <code class="endpoint-path">/api/v1/files/{file_id}</code>
+                    </div>
+                    <p class="endpoint-description">删除指定的文件。</p>
+                </div>
+            </div>
+
+            <!-- Image Processing Endpoints -->
+            <div class="endpoint-group">
+                <h3 class="group-title">图片处理</h3>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <span class="method method-post">POST</span>
+                        <code class="endpoint-path">/api/v1/process</code>
+                    </div>
+                    <p class="endpoint-description">完整图片处理：检测并移除水印。</p>
+                    <div class="parameters">
+                        <p class="parameters-title">请求参数</p>
+                        <table class="param-table">
+                            <tr>
+                                <th>参数</th>
+                                <th>类型</th>
+                                <th>默认值</th>
+                                <th>说明</th>
+                            </tr>
+                            <tr>
+                                <td><span class="param-name">file</span></td>
+                                <td><span class="param-type">file</span></td>
+                                <td>-</td>
+                                <td>图片文件</td>
+                            </tr>
+                            <tr>
+                                <td><span class="param-name">detection_method</span></td>
+                                <td><span class="param-type">string</span></td>
+                                <td>auto</td>
+                                <td>检测方法：auto/color/edge/corners/pattern/text</td>
+                            </tr>
+                            <tr>
+                                <td><span class="param-name">device</span></td>
+                                <td><span class="param-type">string</span></td>
+                                <td>cpu</td>
+                                <td>处理设备：cpu 或 cuda</td>
+                            </tr>
+                            <tr>
+                                <td><span class="param-name">return_mask</span></td>
+                                <td><span class="param-type">boolean</span></td>
+                                <td>false</td>
+                                <td>是否返回检测掩码</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="code-example">
+                        <pre><code><span class="code-comment"># cURL 示例</span>
+curl -X POST http://localhost:8000/api/v1/process \
+  -F <span class="code-string">"file=@image.jpg"</span> \
+  -F <span class="code-string">"detection_method=auto"</span> \
+  -F <span class="code-string">"device=cpu"</span>
+
+<span class="code-comment"># 响应</span>
+{
+  <span class="code-string">"success"</span>: <span class="code-string">true</span>,
+  <span class="code-string">"file_id"</span>: <span class="code-string">"550e8400-e29b-41d4-a716-446655440001"</span>,
+  <span class="code-string">"output_url"</span>: <span class="code-string">"/api/v1/download/processed_xxx.png"</span>,
+  <span class="code-string">"processing_time"</span>: <span class="code-string">2.34</span>,
+  <span class="code-string">"message"</span>: <span class="code-string">"图片处理成功"</span>
+}</code></pre>
+                    </div>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <span class="method method-post">POST</span>
+                        <code class="endpoint-path">/api/v1/process/{file_id}</code>
+                    </div>
+                    <p class="endpoint-description">处理已上传的图片（使用文件 ID）。</p>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <span class="method method-post">POST</span>
+                        <code class="endpoint-path">/api/v1/detect/{file_id}</code>
+                    </div>
+                    <p class="endpoint-description">检测水印并返回掩码图片。</p>
+                </div>
+            </div>
+
+            <!-- Info Endpoints -->
+            <div class="endpoint-group">
+                <h3 class="group-title">信息查询</h3>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <span class="method method-get">GET</span>
+                        <code class="endpoint-path">/api/v1/detection-methods</code>
+                    </div>
+                    <p class="endpoint-description">获取所有可用的水印检测方法说明。</p>
+                </div>
+
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <span class="method method-get">GET</span>
+                        <code class="endpoint-path">/api/v1/inpaint-methods</code>
+                    </div>
+                    <p class="endpoint-description">获取所有可用的图片修复算法说明。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2026 Watermark Remover. All rights reserved.</p>
+            <p>Powered by AI Inpainting Technology</p>
+        </div>
+    </footer>
+</body>
+</html>

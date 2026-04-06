@@ -48,3 +48,7 @@ simple_validate.py
 # Test resource directories (not for commit)
 test-photo/
 test-videos/
+
+# Test reports and screenshots
+test_reports/
+test_screenshots/

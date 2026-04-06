@@ -152,20 +152,56 @@ class EnhancedInpainter:
     def _inpaint_multi_pass(self, image_array: np.ndarray, mask_array: np.ndarray) -> np.ndarray:
         """
         Multi-pass inpainting for better results
-        First pass: NS algorithm for structure
-        Second pass: Telea for refinement
+        Strategy:
+        1. First pass: NS algorithm for structure
+        2. Second pass: Telea for refinement
+        3. Third pass: Color correction using surrounding pixels
         """
-        # First pass with NS
-        result_ns = cv2.inpaint(image_array, mask_array, inpaintRadius=5, flags=cv2.INPAINT_NS)
+        # First pass with NS (larger radius for structure)
+        result_ns = cv2.inpaint(image_array, mask_array, inpaintRadius=7, flags=cv2.INPAINT_NS)
 
         # Create a refined mask (slightly smaller)
         kernel = np.ones((3, 3), np.uint8)
         refined_mask = cv2.erode(mask_array, kernel, iterations=1)
 
         # Second pass with Telea on the refined mask
-        result_final = cv2.inpaint(result_ns, refined_mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+        result_refined = cv2.inpaint(result_ns, refined_mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+
+        # Third pass: Color correction using bilateral filter for smooth blending
+        # Apply bilateral filter to the inpainted region for better edge preservation
+        bilateral = cv2.bilateralFilter(result_refined, 9, 75, 75)
+
+        # Blend the bilateral result with the original using the mask
+        mask_3ch = cv2.cvtColor(mask_array, cv2.COLOR_GRAY2RGB)
+        mask_norm = mask_3ch.astype(np.float32) / 255.0
+
+        # Smooth the mask edges for better blending
+        mask_smooth = cv2.GaussianBlur(mask_norm, (5, 5), 0)
+
+        # Final blend
+        result_final = (result_refined * (1 - mask_smooth) + bilateral * mask_smooth).astype(np.uint8)
 
         return result_final
+
+    def _inpaint_aggressive(self, image_array: np.ndarray, mask_array: np.ndarray) -> np.ndarray:
+        """
+        Aggressive inpainting for difficult watermarks
+        Uses larger radius and multiple iterations
+        """
+        # Dilate mask to cover more area around the watermark
+        kernel = np.ones((5, 5), np.uint8)
+        dilated_mask = cv2.dilate(mask_array, kernel, iterations=2)
+
+        # First pass: NS with large radius
+        result1 = cv2.inpaint(image_array, dilated_mask, inpaintRadius=10, flags=cv2.INPAINT_NS)
+
+        # Second pass: Telea on original mask
+        result2 = cv2.inpaint(result1, mask_array, inpaintRadius=5, flags=cv2.INPAINT_TELEA)
+
+        # Third pass: Another NS pass
+        result3 = cv2.inpaint(result2, mask_array, inpaintRadius=3, flags=cv2.INPAINT_NS)
+
+        return result3
 
     def inpaint(self, image: Image.Image, mask: Image.Image) -> Image.Image:
         """
@@ -202,6 +238,8 @@ class EnhancedInpainter:
                 result = self._inpaint_lama(image_array, processed_mask)
             elif self.method == "multi":
                 result = self._inpaint_multi_pass(image_array, processed_mask)
+            elif self.method == "aggressive":
+                result = self._inpaint_aggressive(image_array, processed_mask)
             else:
                 result = self._inpaint_opencv(image_array, processed_mask)
 

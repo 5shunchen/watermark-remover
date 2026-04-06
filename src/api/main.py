@@ -36,7 +36,9 @@ async def root():
     html_path = PROJECT_ROOT / "templates" / "index.html"
     if html_path.exists():
         return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
-    return HTMLResponse(content="<h1>Watermark Remover</h1><p>Landing page not found</p>")
+    return HTMLResponse(
+        content="<h1>Watermark Remover</h1><p>Landing page not found</p>"
+    )
 
 
 @app.get("/")

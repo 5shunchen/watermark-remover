@@ -409,11 +409,12 @@ def detect_watermark_by_text(image: Image.Image) -> Image.Image:
     roi_std = np.std(roi)
 
     # 使用 Otsu 自适应阈值
-    _, roi_otsu = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    otsu_result, _ = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    otsu_thresh = int(otsu_result)
 
     # 多阈值检测 - 捕捉不同亮度的文字
     detected = False
-    for thresh_val in [roi_mean + roi_std, roi_mean + 1.5 * roi_std, int(roi_otsu[0]), 180, 200]:
+    for thresh_val in [int(roi_mean + roi_std), int(roi_mean + 1.5 * roi_std), otsu_thresh, 180, 200]:
         if detected:
             break
         _, roi_binary = cv2.threshold(roi, int(thresh_val), 255, cv2.THRESH_BINARY)

@@ -377,19 +377,90 @@ def detect_watermark_by_pattern(image: Image.Image) -> Image.Image:
     return mask_pil
 
 
+def detect_watermark_by_text(image: Image.Image) -> Image.Image:
+    """
+    Detect text-like watermarks using MSER and morphological analysis
+    Specialized for detecting watermarks like "@小样燃剪"
+
+    Args:
+        image: Input PIL Image
+
+    Returns:
+        PIL Image mask with detected text watermark areas
+    """
+    img_array = np.array(image)
+    img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+
+    height, width = gray.shape
+    mask = np.zeros((height, width), dtype=np.uint8)
+
+    # === 1. MSER-like text detection ===
+    # Use multiple thresholds to detect stable text regions
+    for thresh_val in [200, 220, 240]:
+        _, binary = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY)
+
+        # Find contours
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            x, y, w, h = cv2.boundingRect(contour)
+
+            # Text-like characteristics:
+            # - Area in reasonable range (not too small, not too large)
+            # - Aspect ratio typical of text
+            # - Located in corners (especially top-right)
+
+            is_in_corner = (
+                (y < height * 0.25 and x > width * 0.5) or  # Top-right
+                (y < height * 0.25 and x < width * 0.25) or  # Top-left
+                (y > height * 0.85)  # Bottom (subtitles)
+            )
+
+            if (
+                50 < area < 5000
+                and 0.2 < w / h < 5
+                and is_in_corner
+            ):
+                cv2.drawContours(mask, [contour], -1, (255), -1)
+
+    # === 2. High-frequency detail detection (for semi-transparent watermarks) ===
+    # Laplacian to find sharp transitions
+    laplacian = cv2.Laplacian(gray, cv2.CV_64F)
+    laplacian_abs = np.absolute(laplacian)
+    laplacian_uint8 = cv2.convertScaleAbs(laplacian_abs)
+
+    _, lap_mask = cv2.threshold(laplacian_uint8, 100, 255, cv2.THRESH_BINARY)
+
+    # Focus on top-right corner for laplacian detection
+    lap_mask[0 : int(height * 0.3), int(width * 0.5) :] = lap_mask[
+        0 : int(height * 0.3), int(width * 0.5) :
+    ]
+
+    # === 3. Combine masks ===
+    mask = cv2.bitwise_or(mask, lap_mask)
+
+    # === 4. Morphological cleanup ===
+    kernel = np.ones((3, 3), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+
+    return Image.fromarray(mask)
+
+
 def detect_watermark(image: Image.Image, method: str = "auto") -> Image.Image:
     """
     Main function to detect watermark in an image
 
     Args:
         image: Input PIL Image
-        method: Detection method ("color", "edge", "corners", "pattern", "template", "auto")
+        method: Detection method ("color", "edge", "corners", "pattern", "template", "text", "auto")
 
     Returns:
         PIL Image mask with detected watermark areas
     """
     if method == "color":
-        # Default color range for detecting colored watermarks
         return detect_watermark_by_color(image)
     elif method == "edge":
         return detect_watermark_by_edge(image)
@@ -399,6 +470,10 @@ def detect_watermark(image: Image.Image, method: str = "auto") -> Image.Image:
         return detect_watermark_by_pattern(image)
     elif method == "template":
         return detect_watermark_by_template_matching(image)
+    elif method == "text":
+        return detect_watermark_by_text(image)
+    elif method == "corner_focus":
+        return detect_watermark_by_corner_focus(image, focus_area="top-right")
     else:  # auto
         # Enhanced adaptive detection: try multiple methods and intelligently combine
         try:

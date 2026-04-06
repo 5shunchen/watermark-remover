@@ -37,3 +37,15 @@ pyrightconfig.json
 
 # Claude Code configuration (local settings, hooks, agents)
 .claude/
+
+# Standalone scripts (use src/ directory instead)
+detect_watermark.py
+process_watermark_removal.py
+demo_features.py
+validate_system.py
+simple_validate.py
+test_*.py
+
+# Test resources (local test files, not for commit)
+test-photo/
+test-videos/

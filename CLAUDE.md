@@ -62,3 +62,7 @@ watermark-remover/
 
 ### Git 提交
 使用 MCP Bash 工具手动提交代码，不要自动提交。
+
+### MCP 配置
+项目使用 Puppeteer MCP 服务进行浏览器自动化测试。
+配置见 `claude.json` 文件。

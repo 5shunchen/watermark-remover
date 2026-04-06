@@ -396,22 +396,23 @@ def detect_watermark_by_text(image: Image.Image) -> Image.Image:
     mask = np.zeros((height, width), dtype=np.uint8)
 
     # === 1. 右上角区域 - 使用 CLAHE 增强对比度后检测 ===
-    # 定义右上角 ROI
-    roi_x = int(width * 0.5)
-    roi_y = 0
-    roi_w = int(width * 0.5)
-    roi_h = int(height * 0.2)
+    # 定义右上角 ROI - 更精确的区域
+    roi_x = int(width * 0.55)
+    roi_y = int(height * 0.08)  # 从顶部 8% 开始，避开最上方的头发
+    roi_w = int(width * 0.45)
+    roi_h = int(height * 0.15)  # 到顶部 23%
 
     roi = gray[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
 
-    # 使用 CLAHE（对比度受限自适应直方图均衡化）增强局部对比度
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    # 使用 CLAHE 增强局部对比度
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     roi_enhanced = clahe.apply(roi)
 
-    # 现在水印文字应该更突出了
-    for thresh_val in [150, 180, 210]:
+    # 使用较高的阈值检测亮色文字（减少头发区域噪点）
+    for thresh_val in [170, 190, 210]:
         _, roi_binary = cv2.threshold(roi_enhanced, thresh_val, 255, cv2.THRESH_BINARY)
 
+        # 形态学操作连接文字
         kernel = np.ones((3, 3), np.uint8)
         roi_dilated = cv2.dilate(roi_binary, kernel, iterations=2)
         roi_eroded = cv2.erode(roi_dilated, kernel, iterations=1)
@@ -420,16 +421,20 @@ def detect_watermark_by_text(image: Image.Image) -> Image.Image:
 
         for contour in contours:
             area = cv2.contourArea(contour)
-            if 10 < area < 5000:
+            x, y, w, h = cv2.boundingRect(contour)
+
+            # 更严格的文字特征过滤
+            # 水印文字应该有合理的面积和长宽比
+            if 30 < area < 3000 and 0.5 < w / h < 8:
                 roi_mask = np.zeros_like(roi_eroded)
                 cv2.drawContours(roi_mask, [contour], -1, (255), -1)
                 mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w] = cv2.bitwise_or(
                     mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w], roi_mask
                 )
 
-    # === 2. 原始灰度图的直接阈值检测（作为补充）===
+    # === 2. 原始灰度图的低阈值检测（捕捉暗淡文字）===
     roi_orig = gray[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
-    for thresh_val in [100, 130, 160, 190]:
+    for thresh_val in [110, 130, 150]:
         _, roi_binary = cv2.threshold(roi_orig, thresh_val, 255, cv2.THRESH_BINARY)
 
         kernel = np.ones((3, 3), np.uint8)
@@ -439,12 +444,17 @@ def detect_watermark_by_text(image: Image.Image) -> Image.Image:
 
         for contour in contours:
             area = cv2.contourArea(contour)
-            if 10 < area < 5000:
-                roi_mask = np.zeros_like(roi_dilated)
-                cv2.drawContours(roi_mask, [contour], -1, (255), -1)
-                mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w] = cv2.bitwise_or(
-                    mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w], roi_mask
-                )
+            # 更严格的面积过滤
+            if 20 < area < 3000:
+                # 检查轮廓中心是否在 ROI 的底部（水印通常在 ROI 底部）
+                x, y, w, h = cv2.boundingRect(contour)
+                center_y = y + h / 2
+                if center_y > roi_h * 0.3:  # 在 ROI 的下 70% 区域
+                    roi_mask = np.zeros_like(roi_dilated)
+                    cv2.drawContours(roi_mask, [contour], -1, (255), -1)
+                    mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w] = cv2.bitwise_or(
+                        mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w], roi_mask
+                    )
 
     # === 3. 底部字幕检测 ===
     sub_y = int(height * 0.85)

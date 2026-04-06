@@ -61,4 +61,4 @@ watermark-remover/
 每个功能必须：测试全部通过 + 代码格式化完成 + 有 docstring 注释
 
 ### Git 提交
-每完成一个独立功能后，执行 git add -A && git commit，无需等待我的确认。
+使用 MCP Bash 工具手动提交代码，不要自动提交。

@@ -52,3 +52,9 @@ test-videos/
 # Test reports and screenshots
 test_reports/
 test_screenshots/
+
+# Model files (too large for GitHub, download manually)
+models/*.onnx
+models/*.pth
+models/*.pt
+!models/.gitkeep

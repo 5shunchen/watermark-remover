@@ -220,6 +220,8 @@ class Inpainter:
         """
         Perform inpainting using LaMa model
 
+        LaMa model requires 512x512 input. Images are resized accordingly.
+
         Args:
             image_array: Image as numpy array (RGB format)
             mask_array: Binary mask array (255 for areas to inpaint)
@@ -230,24 +232,41 @@ class Inpainter:
         if self.lama_session is None:
             raise RuntimeError("LaMa model not loaded")
 
-        # Normalize image to [0, 1] range
-        img_normalized = image_array.astype(np.float32) / 255.0
+        # Store original dimensions
+        orig_h, orig_w = image_array.shape[:2]
+
+        # LaMa requires 512x512 input
+        target_size = (512, 512)
+
+        # Resize image and mask to model input size
+        img_resized = cv2.resize(
+            image_array, target_size, interpolation=cv2.INTER_LINEAR
+        )
+        mask_resized = cv2.resize(
+            mask_array, target_size, interpolation=cv2.INTER_LINEAR
+        )
+
+        # Normalize image to [0, 1] range (RGB format for LaMa)
+        img_normalized = img_resized.astype(np.float32) / 255.0
 
         # Normalize mask to [0, 1] range
-        mask_normalized = mask_array.astype(np.float32) / 255.0
+        mask_normalized = mask_resized.astype(np.float32) / 255.0
 
         # Get input/output names from model
         input_names = [inp.name for inp in self.lama_session.get_inputs()]
         output_name = self.lama_session.get_outputs()[0].name
 
-        # Prepare input tensor based on model requirements
-        # LaMa typically expects: image (BGR), mask (single channel)
-        # Convert RGB to BGR for LaMa
-        img_bgr = cv2.cvtColor(img_normalized, cv2.COLOR_RGB2BGR)
+        # Prepare input tensors
+        # Image: (batch, channels, height, width) - RGB format
+        img_input = np.transpose(img_normalized, (2, 0, 1))[np.newaxis, ...]
 
-        # Add batch dimension and channel dimension for mask
-        img_input = np.transpose(img_bgr, (2, 0, 1))[np.newaxis, ...]
-        mask_input = mask_normalized[np.newaxis, np.newaxis, ...]
+        # Mask: (batch, 1, height, width)
+        if len(mask_normalized.shape) == 2:
+            mask_input = mask_normalized[np.newaxis, np.newaxis, ...]
+        else:
+            # If mask has channel dimension, take first channel
+            mask_input = mask_normalized[:, :, 0:1][np.newaxis, ...]
+            mask_input = np.transpose(mask_input, (0, 3, 1, 2))
 
         # Run inference
         result = self.lama_session.run(
@@ -267,10 +286,18 @@ class Inpainter:
         # Clip to valid range and convert to uint8
         output = np.clip(output * 255, 0, 255).astype(np.uint8)
 
-        # Convert BGR back to RGB
-        output_rgb = cv2.cvtColor(output, cv2.COLOR_BGR2RGB)
+        # Resize back to original dimensions
+        output_resized = cv2.resize(
+            output, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR
+        )
 
-        return Image.fromarray(output_rgb)
+        # Ensure RGB format (LaMa output is already RGB)
+        if len(output_resized.shape) == 2:
+            output_resized = cv2.cvtColor(output_resized, cv2.COLOR_GRAY2RGB)
+        elif output_resized.shape[2] == 4:
+            output_resized = cv2.cvtColor(output_resized, cv2.COLOR_RGBA2RGB)
+
+        return Image.fromarray(output_resized)
 
 
 def remove_watermark(

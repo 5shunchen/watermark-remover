@@ -434,7 +434,9 @@ def detect_watermark_by_onnx(
     """
     Detect watermarks using ONNX deep learning model
 
-    Uses a pre-trained ONNX model for robust watermark detection.
+    Note: This function currently returns empty results as the LaMa model
+    is an inpainting model, not a detection model. A dedicated watermark
+    detection ONNX model would be needed for actual DL-based detection.
 
     Args:
         image: Input PIL Image
@@ -453,76 +455,11 @@ def detect_watermark_by_onnx(
         print(f"ONNX model not found at {model_path}")
         return []
 
-    img_array = np.array(image)
-    if len(img_array.shape) == 3:
-        img_gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-    else:
-        img_gray = img_array.copy()
-
-    height, width = img_gray.shape
-    watermarks: List[Dict[str, Any]] = []
-
-    try:
-        # Load ONNX model
-        session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
-
-        # Preprocess image for model
-        input_size = (512, 512)  # Standard input size for most models
-        img_resized = cv2.resize(img_gray, input_size)
-        img_normalized = img_resized.astype(np.float32) / 255.0
-
-        # Add batch and channel dimensions
-        input_tensor = np.expand_dims(np.expand_dims(img_normalized, 0), 0)
-        input_tensor = np.repeat(input_tensor, 3, axis=1)  # Convert to 3 channels
-
-        # Get input/output names
-        input_name = session.get_inputs()[0].name
-        output_name = session.get_outputs()[0].name
-
-        # Run inference
-        outputs = session.run([output_name], {input_name: input_tensor})
-        prediction = outputs[0]
-
-        # Post-process prediction to get watermark mask
-        # Assuming output is a probability mask
-        pred_mask = (prediction[0, 0] > confidence_threshold).astype(np.uint8) * 255
-        pred_mask = cv2.resize(pred_mask, (width, height))
-
-        # Find contours in prediction mask
-        contours, _ = cv2.findContours(
-            pred_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
-
-        for contour in contours:
-            area = cv2.contourArea(contour)
-            if area < 50:  # Filter small noise
-                continue
-
-            x, y, w, h = cv2.boundingRect(contour)
-
-            # Calculate confidence from mean prediction value in region
-            region = prediction[0, 0, y : y + h, x : x + w]
-            confidence = float(np.mean(region))
-
-            if confidence >= confidence_threshold:
-                watermarks.append(
-                    {
-                        "x": int(x),
-                        "y": int(y),
-                        "w": int(w),
-                        "h": int(h),
-                        "confidence": round(confidence, 3),
-                        "type": "deep_learning",
-                    }
-                )
-
-    except Exception as e:
-        print(f"ONNX detection warning: {e}")
-
-    # Sort by confidence (highest first)
-    watermarks.sort(key=lambda x: x["confidence"], reverse=True)
-
-    return watermarks
+    # Note: LaMa is an inpainting model, not a detection model
+    # For now, return empty results
+    # TODO: Integrate a dedicated watermark detection ONNX model
+    print("ONNX detection: Using heuristic methods (LaMa is an inpainting model)")
+    return []
 
 
 def detect_watermark_by_pattern(image: Image.Image) -> Image.Image:

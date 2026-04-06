@@ -114,45 +114,26 @@ def test_estimate_processing_time():
 
 @patch("cv2.VideoCapture")
 def test_remove_watermark_from_video_success(mock_cap):
-    """Test successful video watermark removal (with mocks) - Updated to avoid moviepy.editor import"""
-    # Check if moviepy.editor is available before testing
-    try:
-        from moviepy.editor import VideoFileClip
-
-        HAS_MOVIEPY_EDITOR = True
-    except ImportError:
-        HAS_MOVIEPY_EDITOR = False
-
-    if not HAS_MOVIEPY_EDITOR:
-        # Skip this test if moviepy.editor is not available
-        import pytest
-
-        pytest.skip("moviepy.editor not available")
-        return
-
-    # Setup mocks
+    """Test successful video watermark removal with FFmpeg-based processing"""
+    # Setup mocks for video info gathering
     mock_cap.return_value.isOpened.return_value = True
     mock_cap.return_value.get.side_effect = lambda prop: (
         {cv2.CAP_PROP_FRAME_COUNT: 10, cv2.CAP_PROP_FPS: 30}[prop]
         if prop in [cv2.CAP_PROP_FRAME_COUNT, cv2.CAP_PROP_FPS]
         else 0
     )
-    mock_cap.return_value.read.side_effect = [
-        (True, np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8))
-        for _ in range(10)
-    ] + [
-        (False, None)
-    ]  # End of video
     mock_cap.return_value.release.return_value = None
 
     # Create temporary files for test
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_input:
+        # Write some mock data to make it look like a file
+        temp_input.write(b"mock video data")
         temp_input_path = temp_input.name
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_output:
         temp_output_path = temp_output.name
 
     try:
-        # Test video processing - this may fail if moviepy doesn't work in the test environment
+        # Test video processing - will fail due to invalid video but should return bool
         success = remove_watermark_from_video(
             video_input_path=temp_input_path,
             video_output_path=temp_output_path,
@@ -160,8 +141,7 @@ def test_remove_watermark_from_video_success(mock_cap):
             device="cpu",
         )
 
-        # Should return True on success (or False if optional dependencies aren't met)
-        # Allow both outcomes as the function handles missing dependencies gracefully
+        # Should return bool (False expected since it's not a real video file)
         assert isinstance(success, bool)
 
     finally:

@@ -2,9 +2,18 @@
 Video Processing Module
 Handles watermark removal in videos frame by frame
 With enhanced progress tracking and batch processing support
+
+Technical requirements:
+- Uses FFmpeg for frame extraction and re-encoding
+- Preserves original audio track
+- Supports MP4/AVI/MOV formats
+- Progress bar displayed with tqdm
 """
 
 import os
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Generator
@@ -12,6 +21,7 @@ from typing import Any, Callable, Generator
 import cv2
 import numpy as np
 from PIL import Image
+from tqdm import tqdm
 
 
 class VideoStatus(Enum):
@@ -34,15 +44,6 @@ class VideoInfo:
     duration: float
     codec: str
 
-
-# Defer heavy imports to be used only when needed
-try:
-    from moviepy.editor import VideoFileClip
-
-    HAS_MOVIEPY = True
-except ImportError:
-    HAS_MOVIEPY = False
-    VideoFileClip = None
 
 from ..detector import detect_watermark
 from ..inpainter import remove_watermark
@@ -181,10 +182,10 @@ def remove_watermark_from_video(
     progress_callback: Callable[[float], Any] = None,
 ) -> bool:
     """
-    Remove watermarks from video file
+    Remove watermarks from video file using FFmpeg for frame extraction and re-encoding
 
     Args:
-        video_input_path: Path to input video file
+        video_input_path: Path to input video file (MP4/AVI/MOV supported)
         video_output_path: Path for output video file
         detection_method: Watermark detection method
         model_path: Path to inpainting model
@@ -194,106 +195,200 @@ def remove_watermark_from_video(
 
     Returns:
         True if successful, False otherwise
+
+    Performance target: > 10 fps for 1080p video (CPU mode)
     """
-    if not HAS_MOVIEPY:
-        print("MoviePy not available. Video processing requires 'moviepy' package.")
+    # Verify input file exists
+    if not os.path.exists(video_input_path):
+        print(f"Error: Input video file not found: {video_input_path}")
         return False
 
-    # Create a temporary directory for processed frames
-    temp_dir = os.path.join(os.path.dirname(video_output_path), "temp_frames")
-    os.makedirs(temp_dir, exist_ok=True)
+    # Create temporary directories
+    temp_dir = tempfile.mkdtemp(prefix="video_processing_")
+    frames_dir = os.path.join(temp_dir, "frames")
+    processed_dir = os.path.join(temp_dir, "processed")
+    os.makedirs(frames_dir, exist_ok=True)
+    os.makedirs(processed_dir, exist_ok=True)
 
     try:
-        # Count total frames to calculate progress
+        # Step 1: Extract frames using FFmpeg
+        print(f"Extracting frames from {video_input_path}...")
+        frame_pattern = os.path.join(frames_dir, "frame_%06d.png")
+        ffmpeg_extract_cmd = [
+            "ffmpeg",
+            "-i",
+            video_input_path,
+            "-vf",
+            "fps=original",
+            frame_pattern,
+            "-loglevel",
+            "error",
+        ]
+        result = subprocess.run(
+            ffmpeg_extract_cmd, capture_output=True, text=True, check=False
+        )
+        if result.returncode != 0:
+            print(f"Error extracting frames: {result.stderr}")
+            return False
+
+        # Get list of extracted frames
+        frame_files = sorted([f for f in os.listdir(frames_dir) if f.endswith(".png")])
+        total_frames = len(frame_files)
+
+        if total_frames == 0:
+            print("Error: No frames extracted from video")
+            return False
+
+        print(f"Extracted {total_frames} frames")
+
+        # Step 2: Get video info for audio extraction and output settings
         cap = cv2.VideoCapture(video_input_path)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = cap.get(cv2.CAP_PROP_FPS)
         cap.release()
 
+        # Step 3: Process each frame with tqdm progress bar
+        print(f"Processing {total_frames} frames...")
         processed_frame_paths = []
-        frame_count = 0
 
-        for frame_idx, frame in extract_frames(video_input_path, frame_interval):
-            # Process the frame
-            processed_frame = process_video_frame(
-                frame=frame,
-                detection_method=detection_method,
-                model_path=model_path,
-                device=device,
-            )
+        with tqdm(total=total_frames, desc="Processing frames", unit="frame") as pbar:
+            for i, frame_file in enumerate(frame_files):
+                frame_idx = int(frame_file.split("_")[1].split(".")[0])
 
-            # Save processed frame
-            frame_path = os.path.join(temp_dir, f"frame_{frame_idx:06d}.png")
-            processed_frame.save(frame_path)
-            processed_frame_paths.append(frame_path)
+                # Check if this frame should be processed based on interval
+                if frame_idx % frame_interval != 0:
+                    # Skip this frame, copy original
+                    frame_path = os.path.join(frames_dir, frame_file)
+                    processed_path = os.path.join(processed_dir, frame_file)
+                    shutil.copy(frame_path, processed_path)
+                    processed_frame_paths.append(processed_path)
+                    pbar.update(1)
+                    continue
 
-            frame_count += 1
+                # Load frame
+                frame_path = os.path.join(frames_dir, frame_file)
+                frame = Image.open(frame_path)
 
-            # Report progress
-            if progress_callback:
-                progress = min(1.0, (frame_idx + 1) / total_frames)
-                progress_callback(progress)
+                # Process the frame
+                try:
+                    processed_frame = process_video_frame(
+                        frame=frame,
+                        detection_method=detection_method,
+                        model_path=model_path,
+                        device=device,
+                    )
 
-        # Reconstruct video from processed frames
-        # Load the original video and replace frames
-        original_clip = VideoFileClip(video_input_path)
+                    # Save processed frame
+                    processed_path = os.path.join(processed_dir, frame_file)
+                    processed_frame.save(processed_path)
+                    processed_frame_paths.append(processed_path)
 
-        # For this implementation, we'll use moviepy to process the video
-        # In a real implementation, we might need a more sophisticated approach
+                    # Update progress
+                    pbar.update(1)
+                    if progress_callback:
+                        progress = (i + 1) / total_frames
+                        progress_callback(progress)
 
-        # Create a function to process each frame
-        def process_clip_frame(get_frame, t):
-            frame_time = t
-            current_frame_idx = int(frame_time * fps)
+                except Exception as e:
+                    print(f"Error processing frame {frame_file}: {e}")
+                    # Copy original frame on error
+                    processed_path = os.path.join(processed_dir, frame_file)
+                    shutil.copy(frame_path, processed_path)
+                    processed_frame_paths.append(processed_path)
+                    pbar.update(1)
 
-            # Since we pre-processed specific frames, we need to map time to processed frames
-            # For now, we'll use a simplified approach
-            if current_frame_idx % frame_interval == 0:
-                # Find closest processed frame
-                closest_idx = min(
-                    range(len(processed_frame_paths)),
-                    key=lambda i: abs(
-                        int(processed_frame_paths[i].split("_")[-1].split(".")[0])
-                        - current_frame_idx
-                    ),
-                )
+        # Step 4: Reconstruct video using FFmpeg with original audio
+        print("Reconstructing video with FFmpeg...")
 
-                # Load the processed frame
-                processed_img = Image.open(processed_frame_paths[closest_idx])
-                return np.array(processed_img)
-            else:
-                # Return original frame for skipped frames
-                original_frame = get_frame(t)
-                return original_frame
+        # Create output directory if it doesn't exist
+        os.makedirs(os.path.dirname(video_output_path) or ".", exist_ok=True)
 
-        # Apply processing to the clip
-        processed_clip = original_clip.fl(process_clip_frame)
+        # Pattern for processed frames
+        processed_pattern = os.path.join(processed_dir, "frame_%06d.png")
 
-        # Write the output video
-        processed_clip.write_videofile(
-            video_output_path,
-            codec="libx264",
-            audio_codec="aac",
-            temp_audiofile=os.path.join(temp_dir, "temp-audio.m4a"),
-            remove_temp=True,
+        # First, try to extract audio from original video
+        temp_audio_path = os.path.join(temp_dir, "audio.aac")
+        ffmpeg_audio_cmd = [
+            "ffmpeg",
+            "-i",
+            video_input_path,
+            "-vn",
+            "-acodec",
+            "copy",
+            temp_audio_path,
+            "-loglevel",
+            "error",
+        ]
+        audio_result = subprocess.run(
+            ffmpeg_audio_cmd, capture_output=True, text=True, check=False
         )
 
-        # Close clips to free memory
-        original_clip.close()
-        processed_clip.close()
+        # Build FFmpeg command for video reconstruction
+        if audio_result.returncode == 0 and os.path.exists(temp_audio_path):
+            # Video with audio
+            ffmpeg_merge_cmd = [
+                "ffmpeg",
+                "-y",
+                "-framerate",
+                str(fps),
+                "-i",
+                processed_pattern,
+                "-i",
+                temp_audio_path,
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "23",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-shortest",
+                video_output_path,
+                "-loglevel",
+                "error",
+            ]
+        else:
+            # Video without audio (audio extraction failed or no audio in source)
+            print(
+                "Note: No audio track found or extraction failed, creating video without audio"
+            )
+            ffmpeg_merge_cmd = [
+                "ffmpeg",
+                "-y",
+                "-framerate",
+                str(fps),
+                "-i",
+                processed_pattern,
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "23",
+                "-pix_fmt",
+                "yuv420p",
+                video_output_path,
+                "-loglevel",
+                "error",
+            ]
 
-        # Clean up temporary frames
-        for frame_path in processed_frame_paths:
-            os.remove(frame_path)
-        os.rmdir(temp_dir)
+        result = subprocess.run(
+            ffmpeg_merge_cmd, capture_output=True, text=True, check=False
+        )
+        if result.returncode != 0:
+            print(f"Error reconstructing video: {result.stderr}")
+            return False
 
+        print(f"Video processing completed: {video_output_path}")
         return True
 
     except Exception as e:
-        print(f"Error processing video: {str(e)}")
-        # Clean up temp directory in case of error
-        import shutil
+        print(f"Error processing video: {e}")
+        return False
 
+    finally:
+        # Clean up temporary directory
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
-        return False

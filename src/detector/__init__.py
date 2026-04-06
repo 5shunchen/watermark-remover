@@ -395,68 +395,91 @@ def detect_watermark_by_text(image: Image.Image) -> Image.Image:
     height, width = gray.shape
     mask = np.zeros((height, width), dtype=np.uint8)
 
-    # === 1. 右上角区域 - 使用 CLAHE 增强对比度后检测 ===
-    # 定义右上角 ROI - 更精确的区域
+    # === 1. 右上角区域 - 多尺度检测策略 ===
+    # 定义右上角 ROI
     roi_x = int(width * 0.55)
-    roi_y = int(height * 0.08)  # 从顶部 8% 开始，避开最上方的头发
+    roi_y = int(height * 0.05)
     roi_w = int(width * 0.45)
-    roi_h = int(height * 0.15)  # 到顶部 23%
+    roi_h = int(height * 0.20)
 
     roi = gray[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
+    roi_h_size, roi_w_size = roi.shape
 
-    # 使用 CLAHE 增强局部对比度
+    # 多尺度检测：不同大小的结构元素
+    all_seeds = np.zeros_like(roi)
+
+    # Scale 1: CLAHE 增强 + 高阈值（检测亮色文字核心）
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     roi_enhanced = clahe.apply(roi)
 
-    # 使用较高的阈值检测亮色文字（减少头发区域噪点）
     for thresh_val in [170, 190, 210]:
         _, roi_binary = cv2.threshold(roi_enhanced, thresh_val, 255, cv2.THRESH_BINARY)
+        kernel = np.ones((3, 3), np.uint8)
+        roi_dilated = cv2.dilate(roi_binary, kernel, iterations=1)
+        all_seeds = cv2.bitwise_or(all_seeds, roi_dilated)
 
-        # 形态学操作连接文字
+    # Scale 2: 原始图 + 中等阈值（检测较暗文字）
+    for thresh_val in [120, 140, 160]:
+        _, roi_binary = cv2.threshold(roi, thresh_val, 255, cv2.THRESH_BINARY)
         kernel = np.ones((3, 3), np.uint8)
         roi_dilated = cv2.dilate(roi_binary, kernel, iterations=2)
-        roi_eroded = cv2.erode(roi_dilated, kernel, iterations=1)
+        all_seeds = cv2.bitwise_or(all_seeds, roi_dilated)
 
-        contours, _ = cv2.findContours(roi_eroded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # 清理种子：只保留合理的区域
+    kernel = np.ones((3, 3), np.uint8)
+    all_seeds = cv2.erode(all_seeds, kernel, iterations=1)
 
-        for contour in contours:
-            area = cv2.contourArea(contour)
-            x, y, w, h = cv2.boundingRect(contour)
+    # 找到所有种子轮廓
+    contours, _ = cv2.findContours(all_seeds, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            # 更严格的文字特征过滤
-            # 水印文字应该有合理的面积和长宽比
-            if 30 < area < 3000 and 0.5 < w / h < 8:
-                roi_mask = np.zeros_like(roi_eroded)
-                cv2.drawContours(roi_mask, [contour], -1, (255), -1)
-                mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w] = cv2.bitwise_or(
-                    mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w], roi_mask
-                )
+    # 创建精确的 mask
+    roi_mask = np.zeros_like(all_seeds)
+    valid_contours = []
 
-    # === 2. 原始灰度图的低阈值检测（捕捉暗淡文字）===
-    roi_orig = gray[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
-    for thresh_val in [110, 130, 150]:
-        _, roi_binary = cv2.threshold(roi_orig, thresh_val, 255, cv2.THRESH_BINARY)
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        x, y, w, h = cv2.boundingRect(contour)
 
-        kernel = np.ones((3, 3), np.uint8)
-        roi_dilated = cv2.dilate(roi_binary, kernel, iterations=2)
+        # 过滤太小的噪点
+        if area < 5:
+            continue
 
-        contours, _ = cv2.findContours(roi_dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # 检查位置：水印应该在 ROI 的下半部分
+        if y > roi_h_size * 0.3:
+            valid_contours.append(contour)
+            cv2.drawContours(roi_mask, [contour], -1, (255), -1)
 
-        for contour in contours:
-            area = cv2.contourArea(contour)
-            # 更严格的面积过滤
-            if 20 < area < 3000:
-                # 检查轮廓中心是否在 ROI 的底部（水印通常在 ROI 底部）
-                x, y, w, h = cv2.boundingRect(contour)
-                center_y = y + h / 2
-                if center_y > roi_h * 0.3:  # 在 ROI 的下 70% 区域
-                    roi_mask = np.zeros_like(roi_dilated)
-                    cv2.drawContours(roi_mask, [contour], -1, (255), -1)
-                    mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w] = cv2.bitwise_or(
-                        mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w], roi_mask
-                    )
+    # 如果有有效轮廓，扩展覆盖完整文字
+    if valid_contours:
+        # 合并所有轮廓到一个 mask
+        combined = np.zeros_like(roi_mask)
+        cv2.drawContours(combined, valid_contours, -1, (255), -1)
 
-    # === 3. 底部字幕检测 ===
+        # 找到合并后的 bounding box
+        all_points = np.vstack([cv2.findNonZero(combined)])
+        x, y, w, h = cv2.boundingRect(all_points)
+
+        # 扩展 bounding box 覆盖完整水印（更保守的扩展）
+        expand_x = max(5, int(w * 0.2))
+        expand_y = max(5, int(h * 0.5))
+
+        x1 = max(0, x - expand_x)
+        y1 = max(0, y - expand_y)
+        x2 = min(roi_w_size, x + w + expand_x)
+        y2 = min(roi_h_size, y + h + expand_y)
+
+        # 在扩展区域内使用自适应填充
+        roi_region = roi[y1:y2, x1:x2]
+        if roi_region.size > 0:
+            # 对扩展区域内的部分使用 Otsu 阈值
+            if roi_region.size > 100:  # 确保区域足够大
+                _, otsu_mask = cv2.threshold(roi_region, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                roi_mask[y1:y2, x1:x2] = cv2.bitwise_or(roi_mask[y1:y2, x1:x2], otsu_mask)
+
+    # 复制到完整 mask
+    mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w] = roi_mask
+
+    # === 2. 底部字幕检测 ===
     sub_y = int(height * 0.85)
     subtitle_roi = gray[sub_y:, :]
 
@@ -467,7 +490,7 @@ def detect_watermark_by_text(image: Image.Image) -> Image.Image:
         sub_eroded = cv2.erode(sub_dilated, sub_kernel, iterations=1)
         mask[sub_y:, :] = cv2.bitwise_or(mask[sub_y:, :], sub_eroded)
 
-    # === 4. 最终形态学清理 ===
+    # === 3. 最终形态学清理 ===
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)

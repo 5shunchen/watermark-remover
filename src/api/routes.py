@@ -18,6 +18,7 @@ from PIL import Image
 
 from src.detector import detect_watermark
 from src.inpainter import remove_watermark
+from src.video import remove_watermark_from_video, get_video_info, VideoStatus
 
 # Create router
 router = APIRouter(prefix="/api/v1", tags=["Watermark Remover API"])
@@ -35,6 +36,7 @@ for dir_path in [UPLOAD_DIR, OUTPUT_DIR, MASK_DIR]:
 upload_storage: Dict[str, dict] = {}
 job_storage: Dict[str, dict] = {}
 batch_storage: Dict[str, dict] = {}
+video_job_storage: Dict[str, dict] = {}
 
 
 # ============== Utility Functions ==============
@@ -577,4 +579,262 @@ async def get_inpaint_methods():
                 "quality": "高",
             },
         ]
+    }
+
+
+# ============== Video Processing Endpoints ==============
+
+
+@router.post("/upload-video", tags=["Video Processing"])
+async def upload_video(file: UploadFile = File(...)):
+    """
+    上传视频文件用于处理
+
+    - 支持格式：MP4, AVI, MOV, MKV, WebM
+    - 返回：文件 ID 用于后续处理
+    - 文件大小限制：最大 100MB
+    """
+    # Validate file type
+    allowed_types = [
+        "video/mp4",
+        "video/x-msvideo",
+        "video/quicktime",
+        "video/x-matroska",
+        "video/webm",
+    ]
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件类型。允许的类型：{allowed_types}",
+        )
+
+    # Validate file size (100MB limit for videos)
+    file.seek(0, 2)
+    file_size = file.tell()
+    file.seek(0)
+
+    if file_size > 100 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="文件大小超过 100MB 限制")
+
+    # Generate unique file ID
+    file_id = str(uuid.uuid4())
+
+    # Save file
+    file_path = save_upload_file(file, file_id)
+
+    # Get video info
+    try:
+        video_info = get_video_info(str(file_path))
+    except Exception as e:
+        os.remove(file_path)
+        raise HTTPException(status_code=400, detail=f"无法读取视频文件：{str(e)}")
+
+    # Store metadata
+    upload_storage[file_id] = {
+        "file_id": file_id,
+        "filename": file.filename,
+        "content_type": file.content_type,
+        "size": file_path.stat().st_size,
+        "upload_time": datetime.now().isoformat(),
+        "path": str(file_path),
+        "status": "uploaded",
+        "type": "video",
+        "video_info": {
+            "width": video_info.width,
+            "height": video_info.height,
+            "fps": video_info.fps,
+            "total_frames": video_info.total_frames,
+            "duration": video_info.duration,
+            "codec": video_info.codec,
+        },
+    }
+
+    return {
+        "success": True,
+        "file_id": file_id,
+        "filename": file.filename,
+        "size": file_path.stat().st_size,
+        "content_type": file.content_type,
+        "upload_time": upload_storage[file_id]["upload_time"],
+        "video_info": upload_storage[file_id]["video_info"],
+    }
+
+
+@router.post("/process-video/{file_id}", tags=["Video Processing"])
+async def process_video(
+    file_id: str,
+    detection_method: str = Form("auto"),
+    frame_interval: int = Form(1),
+    quality: str = Form("high"),
+):
+    """
+    处理视频去水印
+
+    对已上传的视频进行水印检测和移除处理。
+    处理时间较长，建议异步处理。
+
+    ### 参数
+    - **detection_method**: 水印检测方法 (auto/color/edge/corners/pattern/text)
+    - **frame_interval**: 帧处理间隔 (1=每帧处理，2=每隔一帧处理)
+    - **quality**: 输出质量 (low/medium/high)
+    """
+    if file_id not in upload_storage:
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    file_data = upload_storage[file_id]
+    if file_data.get("type") != "video":
+        raise HTTPException(status_code=400, detail="不是视频文件")
+
+    job_id = str(uuid.uuid4())
+    file_path = Path(file_data["path"])
+
+    # Create job entry
+    video_job_storage[job_id] = {
+        "job_id": job_id,
+        "file_id": file_id,
+        "status": "processing",
+        "progress": 0,
+        "created_at": datetime.now().isoformat(),
+        "detection_method": detection_method,
+        "frame_interval": frame_interval,
+        "quality": quality,
+    }
+
+    # Process video in background
+    async def process_video_background():
+        output_filename = f"processed_{file_id}.mp4"
+        output_path = OUTPUT_DIR / output_filename
+
+        def progress_callback(progress: float):
+            video_job_storage[job_id]["progress"] = min(1.0, progress * 100)
+
+        try:
+            success = remove_watermark_from_video(
+                video_input_path=str(file_path),
+                video_output_path=str(output_path),
+                detection_method=detection_method,
+                frame_interval=frame_interval,
+                progress_callback=progress_callback,
+            )
+
+            if success:
+                video_job_storage[job_id]["status"] = "completed"
+                video_job_storage[job_id]["progress"] = 100
+                video_job_storage[job_id]["output_path"] = str(output_path)
+                video_job_storage[job_id]["output_filename"] = output_filename
+            else:
+                video_job_storage[job_id]["status"] = "failed"
+                video_job_storage[job_id]["error"] = "处理失败"
+
+        except Exception as e:
+            video_job_storage[job_id]["status"] = "failed"
+            video_job_storage[job_id]["error"] = str(e)
+
+    # Start background processing
+    import asyncio
+
+    asyncio.create_task(process_video_background())
+
+    return {
+        "success": True,
+        "job_id": job_id,
+        "status": "processing",
+        "message": "视频处理已开始",
+        "estimated_time": "根据视频长度而定",
+    }
+
+
+@router.get("/video-status/{job_id}", tags=["Video Processing"])
+async def get_video_status(job_id: str):
+    """
+    查询视频处理进度状态
+    """
+    if job_id not in video_job_storage:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    job_data = video_job_storage[job_id]
+    return {
+        "job_id": job_data["job_id"],
+        "status": job_data["status"],
+        "progress": job_data.get("progress", 0),
+        "created_at": job_data["created_at"],
+        "output_url": (
+            f"/api/v1/download-video/{job_data['output_filename']}"
+            if job_data.get("output_filename")
+            else None
+        ),
+        "error": job_data.get("error"),
+    }
+
+
+@router.get("/download-video/{filename}", tags=["Video Processing"])
+async def download_video(filename: str):
+    """
+    下载处理后的视频
+    """
+    file_path = OUTPUT_DIR / filename
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    return FileResponse(
+        file_path,
+        media_type="video/mp4",
+        filename=filename,
+    )
+
+
+@router.get("/video-methods", tags=["Video Processing"])
+async def get_video_methods():
+    """
+    获取视频处理相关说明
+    """
+    return {
+        "detection_methods": [
+            {
+                "id": "auto",
+                "name": "智能自动",
+                "description": "自动分析视频帧并选择最佳检测方法",
+                "recommended": True,
+            },
+            {
+                "id": "text",
+                "name": "文字检测",
+                "description": "专门检测视频中的文字水印",
+                "use_case": "适用于@用户名等文字水印",
+                "recommended": True,
+            },
+            {
+                "id": "color",
+                "name": "颜色检测",
+                "description": "基于颜色阈值检测",
+                "use_case": "适用于彩色水印",
+            },
+            {
+                "id": "pattern",
+                "name": "图案检测",
+                "description": "分析固定位置的水印图案",
+                "use_case": "适用于台标/固定位置水印",
+            },
+        ],
+        "quality_options": [
+            {
+                "id": "high",
+                "name": "高质量",
+                "description": "最佳输出质量，文件较大",
+                "bitrate": "8000k",
+            },
+            {
+                "id": "medium",
+                "name": "中等质量",
+                "description": "平衡质量和文件大小",
+                "bitrate": "4000k",
+            },
+            {
+                "id": "low",
+                "name": "低质量",
+                "description": "较小文件大小，快速处理",
+                "bitrate": "2000k",
+            },
+        ],
     }

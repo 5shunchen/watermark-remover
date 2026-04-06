@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>视频去水印 - Watermark Remover</title>
+    <link rel="stylesheet" href="/static/video.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container header-content">
+            <a href="/" class="logo">
+                <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+                </svg>
+                <span>Watermark Remover</span>
+            </a>
+            <nav class="nav-links">
+                <a href="/">首页</a>
+                <a href="/video" class="active">视频去水印</a>
+                <a href="/docs">API 文档</a>
+                <a href="https://github.com/5shunchen/watermark-remover" target="_blank">GitHub</a>
+            </nav>
+            <button class="theme-toggle" id="themeToggle" aria-label="切换主题">
+                <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="5"/>
+                    <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                </svg>
+                <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="video-hero">
+        <div class="container">
+            <div class="hero-badge">AI 驱动</div>
+            <h1>视频智能去水印</h1>
+            <p class="hero-description">
+                采用先进的 AI 修复技术，逐帧分析视频，智能识别并移除水印。<br>
+                保持原始画质，输出自然无痕的专业效果。
+            </p>
+            <div class="hero-features">
+                <div class="hero-feature">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                        <polyline points="22 4 12 14.01 9 11.01"/>
+                    </svg>
+                    <span>逐帧处理</span>
+                </div>
+                <div class="hero-feature">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                    </svg>
+                    <span>快速高效</span>
+                </div>
+                <div class="hero-feature">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <path d="M9 3v18"/>
+                        <path d="M15 3v18"/>
+                    </svg>
+                    <span>多格式支持</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Main Upload & Process Section -->
+    <section class="upload-section">
+        <div class="container">
+            <div class="upload-card">
+                <!-- Upload State -->
+                <div class="upload-state" id="uploadState">
+                    <div class="upload-zone" id="uploadZone">
+                        <div class="upload-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                        </div>
+                        <h3>拖拽视频到此处</h3>
+                        <p>或点击选择文件</p>
+                        <div class="upload-hints">
+                            <span class="hint-badge">MP4</span>
+                            <span class="hint-badge">MOV</span>
+                            <span class="hint-badge">AVI</span>
+                            <span class="hint-badge">MKV</span>
+                            <span class="hint-badge">WebM</span>
+                        </div>
+                        <p class="upload-limit">最大 100MB</p>
+                    </div>
+                    <input type="file" id="fileInput" accept="video/*" hidden>
+                </div>
+
+                <!-- Settings Panel -->
+                <div class="settings-panel hidden" id="settingsPanel">
+                    <div class="video-info">
+                        <div class="video-thumbnail">
+                            <video id="videoPreview" muted></video>
+                            <button class="play-preview-btn" id="playPreviewBtn">
+                                <svg viewBox="0 0 24 24" fill="currentColor">
+                                    <polygon points="5 3 19 12 5 21 5 3"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="video-details">
+                            <h4 id="videoName">video.mp4</h4>
+                            <div class="video-meta">
+                                <span id="videoSize">0 MB</span>
+                                <span class="meta-divider">•</span>
+                                <span id="videoDuration">00:00</span>
+                                <span class="meta-divider">•</span>
+                                <span id="videoResolution">1920×1080</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label class="setting-label">
+                                检测方法
+                                <span class="setting-tip">选择最适合的水印检测方式</span>
+                            </label>
+                            <div class="select-wrapper">
+                                <select id="detectionMethod">
+                                    <option value="auto" selected>智能自动（推荐）</option>
+                                    <option value="text">文字检测</option>
+                                    <option value="color">颜色检测</option>
+                                    <option value="pattern">图案检测</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="setting-item">
+                            <label class="setting-label">
+                                输出质量
+                                <span class="setting-tip">平衡质量和文件大小</span>
+                            </label>
+                            <div class="quality-options">
+                                <label class="quality-option">
+                                    <input type="radio" name="quality" value="low">
+                                    <span class="quality-label">
+                                        <span class="quality-name">低</span>
+                                        <span class="quality-desc">快速</span>
+                                    </span>
+                                </label>
+                                <label class="quality-option">
+                                    <input type="radio" name="quality" value="medium" checked>
+                                    <span class="quality-label">
+                                        <span class="quality-name">中</span>
+                                        <span class="quality-desc">平衡</span>
+                                    </span>
+                                </label>
+                                <label class="quality-option">
+                                    <input type="radio" name="quality" value="high">
+                                    <span class="quality-label">
+                                        <span class="quality-name">高</span>
+                                        <span class="quality-desc">最佳</span>
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="setting-item">
+                            <label class="setting-label">
+                                帧处理间隔
+                                <span class="setting-tip">影响处理速度和质量</span>
+                            </label>
+                            <div class="range-wrapper">
+                                <input type="range" id="frameInterval" min="1" max="10" value="1">
+                                <div class="range-labels">
+                                    <span>逐帧</span>
+                                    <span id="intervalValue">每 1 帧</span>
+                                    <span>跳帧</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="btn-primary btn-large" id="startProcessBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="5 3 19 12 5 21 5 3"/>
+                        </svg>
+                        开始处理
+                    </button>
+                </div>
+
+                <!-- Processing State -->
+                <div class="processing-state hidden" id="processingState">
+                    <div class="processing-header">
+                        <div class="processing-spinner">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10" opacity="0.25"/>
+                                <path d="M12 2a10 10 0 0 1 10 10" opacity="0.75"/>
+                            </svg>
+                        </div>
+                        <div class="processing-info">
+                            <h4>正在处理视频</h4>
+                            <p id="processingStatus">AI 正在逐帧分析并移除水印...</p>
+                        </div>
+                    </div>
+
+                    <div class="progress-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        <div class="progress-details">
+                            <span id="progressPercent">0%</span>
+                            <span id="progressEta">剩余时间：计算中...</span>
+                        </div>
+                    </div>
+
+                    <div class="processing-frames">
+                        <div class="frame-preview">
+                            <span class="frame-label">原始帧</span>
+                            <canvas id="originalFrame"></canvas>
+                        </div>
+                        <div class="frame-arrow">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                                <polyline points="12 5 19 12 12 19"/>
+                            </svg>
+                        </div>
+                        <div class="frame-preview">
+                            <span class="frame-label">处理后</span>
+                            <canvas id="processedFrame"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Result State -->
+                <div class="result-state hidden" id="resultState">
+                    <div class="result-header">
+                        <div class="result-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                <polyline points="22 4 12 14.01 9 11.01"/>
+                            </svg>
+                        </div>
+                        <div class="result-info">
+                            <h4>处理完成！</h4>
+                            <p id="resultTime">总耗时：2 分 34 秒</p>
+                        </div>
+                    </div>
+
+                    <div class="comparison-viewer">
+                        <div class="comparison-slider" id="comparisonSlider">
+                            <div class="comparison-image original">
+                                <video id="originalVideo" muted loop></video>
+                                <div class="comparison-label">原始</div>
+                            </div>
+                            <div class="comparison-image processed">
+                                <video id="processedVideo" muted loop></video>
+                                <div class="comparison-label">处理后</div>
+                            </div>
+                            <div class="slider-handle" id="sliderHandle">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="15 18 9 12 15 6"/>
+                                    <polyline points="9 18 3 12 9 6"/>
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="result-actions">
+                        <button class="btn-secondary" id="replayBtn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="1 4 1 10 7 10"/>
+                                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                            </svg>
+                            再处理一个
+                        </button>
+                        <a class="btn-primary" id="downloadBtn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            下载视频
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="video-features">
+        <div class="container">
+            <h2 class="section-title">为什么选择我们的视频去水印？</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+                            <line x1="7" y1="2" x2="7" y2="22"/>
+                            <line x1="17" y1="2" x2="17" y2="22"/>
+                            <line x1="2" y1="12" x2="22" y2="12"/>
+                            <line x1="2" y1="7" x2="7" y2="7"/>
+                            <line x1="2" y1="17" x2="7" y2="17"/>
+                            <line x1="17" y1="17" x2="22" y2="17"/>
+                            <line x1="17" y1="7" x2="22" y2="7"/>
+                        </svg>
+                    </div>
+                    <h3>逐帧精确处理</h3>
+                    <p>AI 模型逐帧分析视频，精准定位水印位置，确保每一帧都完美无瑕。</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                    </div>
+                    <h3>智能识别保护</h3>
+                    <p>智能区分水印和正常内容，只移除水印，保护原始画面的完整性。</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                        </svg>
+                    </div>
+                    <h3>高效处理引擎</h3>
+                    <p>优化的算法和并行处理技术，大幅缩短处理时间，快速交付结果。</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                        </svg>
+                    </div>
+                    <h3>灵活配置选项</h3>
+                    <p>多种检测方法和质量选项，针对不同场景选择最佳配置。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <a href="/" class="footer-logo">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+                        </svg>
+                        <span>Watermark Remover</span>
+                    </a>
+                    <p>AI 驱动的智能去水印工具</p>
+                </div>
+                <div class="footer-links">
+                    <div class="footer-column">
+                        <h4>产品</h4>
+                        <a href="/">图片去水印</a>
+                        <a href="/video">视频去水印</a>
+                        <a href="/docs">API 文档</a>
+                    </div>
+                    <div class="footer-column">
+                        <h4>支持</h4>
+                        <a href="https://github.com/5shunchen/watermark-remover/issues" target="_blank">问题反馈</a>
+                        <a href="https://github.com/5shunchen/watermark-remover" target="_blank">GitHub</a>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 Watermark Remover. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/static/video.js"></script>
+</body>
+</html>

@@ -56,6 +56,15 @@ async def root():
     return HTMLResponse(content="<h1>Watermark Remover</h1><p>Landing page not found</p>")
 
 
+@app.get("/video", response_class=HTMLResponse)
+async def video_page():
+    """Serve the video watermark remover page"""
+    html_path = PROJECT_ROOT / "templates" / "video.html"
+    if html_path.exists():
+        return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>Video Watermark Remover</h1><p>Page not found</p>")
+
+
 @app.get("/api-docs", response_class=HTMLResponse, tags=["Root"])
 async def api_docs():
     """Serve the API documentation page"""

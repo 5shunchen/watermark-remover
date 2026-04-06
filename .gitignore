@@ -44,8 +44,7 @@ process_watermark_removal.py
 demo_features.py
 validate_system.py
 simple_validate.py
-test_*.py
 
-# Test resources (local test files, not for commit)
+# Test resource directories (not for commit)
 test-photo/
 test-videos/

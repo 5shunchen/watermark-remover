@@ -395,58 +395,69 @@ def detect_watermark_by_text(image: Image.Image) -> Image.Image:
     height, width = gray.shape
     mask = np.zeros((height, width), dtype=np.uint8)
 
-    # === 1. 全图范围的多阈值检测 ===
-    # 使用多个低阈值检测暗淡的文字
-    for thresh_val in [90, 110, 130, 150, 170, 190]:
-        _, binary = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY)
+    # === 1. 右上角区域 - 使用 CLAHE 增强对比度后检测 ===
+    # 定义右上角 ROI
+    roi_x = int(width * 0.5)
+    roi_y = 0
+    roi_w = int(width * 0.5)
+    roi_h = int(height * 0.2)
 
-        # 形态学膨胀连接文字笔画
+    roi = gray[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
+
+    # 使用 CLAHE（对比度受限自适应直方图均衡化）增强局部对比度
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    roi_enhanced = clahe.apply(roi)
+
+    # 现在水印文字应该更突出了
+    for thresh_val in [150, 180, 210]:
+        _, roi_binary = cv2.threshold(roi_enhanced, thresh_val, 255, cv2.THRESH_BINARY)
+
         kernel = np.ones((3, 3), np.uint8)
-        dilated = cv2.dilate(binary, kernel, iterations=2)
-        eroded = cv2.erode(dilated, kernel, iterations=1)
+        roi_dilated = cv2.dilate(roi_binary, kernel, iterations=2)
+        roi_eroded = cv2.erode(roi_dilated, kernel, iterations=1)
 
-        # 找到轮廓
-        contours, _ = cv2.findContours(eroded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(roi_eroded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         for contour in contours:
             area = cv2.contourArea(contour)
-            x, y, w, h = cv2.boundingRect(contour)
+            if 10 < area < 5000:
+                roi_mask = np.zeros_like(roi_eroded)
+                cv2.drawContours(roi_mask, [contour], -1, (255), -1)
+                mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w] = cv2.bitwise_or(
+                    mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w], roi_mask
+                )
 
-            # 检查是否在右上角区域
-            is_top_right = (y < height * 0.25 and x > width * 0.5)
-            # 检查是否在底部区域（字幕）
-            is_bottom = y > height * 0.85
+    # === 2. 原始灰度图的直接阈值检测（作为补充）===
+    roi_orig = gray[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
+    for thresh_val in [100, 130, 160, 190]:
+        _, roi_binary = cv2.threshold(roi_orig, thresh_val, 255, cv2.THRESH_BINARY)
 
-            # 文字特征：合理的面积和长宽比
-            if 10 < area < 8000 and 0.2 < w / h < 15:
-                if is_top_right or is_bottom:
-                    cv2.drawContours(mask, [contour], -1, (255), -1)
+        kernel = np.ones((3, 3), np.uint8)
+        roi_dilated = cv2.dilate(roi_binary, kernel, iterations=2)
 
-    # === 2. HSV 颜色空间检测 - 低饱和度高亮度区域 ===
-    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-    h, s, v = cv2.split(hsv)
+        contours, _ = cv2.findContours(roi_dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # 水印通常是低饱和度 + 相对较高亮度
-    _, v_mask = cv2.threshold(v, 140, 255, cv2.THRESH_BINARY)
-    _, s_mask = cv2.threshold(s, 100, 255, cv2.THRESH_BINARY_INV)
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if 10 < area < 5000:
+                roi_mask = np.zeros_like(roi_dilated)
+                cv2.drawContours(roi_mask, [contour], -1, (255), -1)
+                mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w] = cv2.bitwise_or(
+                    mask[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w], roi_mask
+                )
 
-    # 结合两个条件
-    color_mask = cv2.bitwise_and(v_mask, s_mask)
+    # === 3. 底部字幕检测 ===
+    sub_y = int(height * 0.85)
+    subtitle_roi = gray[sub_y:, :]
 
-    # 形态学操作
-    kernel = np.ones((3, 3), np.uint8)
-    color_dilated = cv2.dilate(color_mask, kernel, iterations=2)
+    for thresh_val in [140, 160, 180]:
+        _, sub_binary = cv2.threshold(subtitle_roi, thresh_val, 255, cv2.THRESH_BINARY)
+        sub_kernel = np.ones((5, 5), np.uint8)
+        sub_dilated = cv2.dilate(sub_binary, sub_kernel, iterations=2)
+        sub_eroded = cv2.erode(sub_dilated, sub_kernel, iterations=1)
+        mask[sub_y:, :] = cv2.bitwise_or(mask[sub_y:, :], sub_eroded)
 
-    # 只保留右上角和底部区域
-    color_final = np.zeros_like(color_dilated)
-    # 右上角
-    color_final[0:int(height*0.25), int(width*0.5):] = color_dilated[0:int(height*0.25), int(width*0.5):]
-    # 底部
-    color_final[int(height*0.85):, :] = color_dilated[int(height*0.85):, :]
-
-    mask = cv2.bitwise_or(mask, color_final)
-
-    # === 3. 最终形态学清理 ===
+    # === 4. 最终形态学清理 ===
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)

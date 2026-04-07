@@ -3,14 +3,18 @@ FastAPI Interface for Watermark Removal
 Provides REST API endpoints for watermark detection and removal
 """
 
+import io
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Form, UploadFile, File
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
+from PIL import Image
 
 # Import API router
 from src.api.routes import router as api_router
+from src.detector import detect_watermark
+from src.inpainter import remove_watermark
 
 app = FastAPI(
     title="Watermark Remover API",
@@ -72,6 +76,54 @@ async def api_docs():
     if html_path.exists():
         return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
     return HTMLResponse(content="<h1>API Docs</h1><p>Documentation not found</p>")
+
+
+@app.post("/process/", tags=["Image Processing"])
+async def process_image_direct(
+    file: UploadFile = File(...),
+    detection_method: str = Form("auto"),
+    device: str = Form("cpu"),
+):
+    """
+    直接返回处理后的图片 blob
+
+    前端 JavaScript 使用此端点直接获取处理后的图片。
+    """
+    try:
+        # Read and process image
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents)).convert("RGB")
+
+        # Detect watermark
+        mask = detect_watermark(image, method=detection_method)
+
+        # Remove watermark
+        result_image = remove_watermark(
+            image=image,
+            mask=mask,
+            device=device,
+        )
+
+        # Convert to bytes and return
+        buffer = io.BytesIO()
+        result_image.save(buffer, format="PNG")
+        buffer.seek(0)
+
+        return Response(
+            content=buffer.getvalue(),
+            media_type="image/png",
+            headers={
+                "Content-Disposition": f'attachment; filename="processed_{file.filename}"'
+            }
+        )
+
+    except Exception as e:
+        # Return error as JSON even for image endpoint
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=500,
+            content={"message": f"处理失败：{str(e)}", "error": str(e)}
+        )
 
 
 if __name__ == "__main__":

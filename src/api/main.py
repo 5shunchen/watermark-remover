@@ -83,11 +83,17 @@ async def process_image_direct(
     file: UploadFile = File(...),
     detection_method: str = Form("auto"),
     device: str = Form("cpu"),
+    inpaint_method: str = Form("lama"),
 ):
     """
     直接返回处理后的图片 blob
 
     前端 JavaScript 使用此端点直接获取处理后的图片。
+
+    参数：
+    - detection_method: 水印检测方法 (auto, enhanced, color, edge, etc.)
+    - device: 处理设备 (cpu 或 cuda)
+    - inpaint_method: 修复方法 (lama, telea, ns) - 默认 lama
     """
     try:
         # Read and process image
@@ -102,6 +108,7 @@ async def process_image_direct(
             image=image,
             mask=mask,
             device=device,
+            method=inpaint_method,
         )
 
         # Convert to bytes and return

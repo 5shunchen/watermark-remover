@@ -253,6 +253,7 @@ async def process_image(
     detection_method: str = Form("auto"),
     device: str = Form("cpu"),
     return_mask: bool = Form(False),
+    inpaint_method: str = Form("lama"),
 ):
     """
     完整图片处理：检测并移除水印
@@ -260,9 +261,10 @@ async def process_image(
     上传图片并一键获取处理结果。
 
     ### 参数
-    - **detection_method**: 水印检测方法 (auto, color, edge, corners, pattern, text)
+    - **detection_method**: 水印检测方法 (auto, color, edge, corners, pattern, text, enhanced)
     - **device**: 处理设备 (cpu 或 cuda)
     - **return_mask**: 是否返回检测掩码
+    - **inpaint_method**: 修复方法 (lama, telea, ns) - 默认 lama (AI 模型，最佳质量)
     """
     start_time = time.time()
     file_id = str(uuid.uuid4())
@@ -280,6 +282,7 @@ async def process_image(
             image=image,
             mask=mask,
             device=device,
+            method=inpaint_method,
         )
 
         # Save result

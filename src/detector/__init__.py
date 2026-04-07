@@ -661,7 +661,7 @@ def detect_watermark(image: Image.Image, method: str = "auto") -> Image.Image:
 
     Args:
         image: Input PIL Image
-        method: Detection method ("color", "edge", "corners", "pattern", "template", "text", "auto")
+        method: Detection method ("color", "edge", "corners", "pattern", "template", "text", "enhanced", "auto")
 
     Returns:
         PIL Image mask with detected watermark areas
@@ -680,8 +680,25 @@ def detect_watermark(image: Image.Image, method: str = "auto") -> Image.Image:
         return detect_watermark_by_text(image)
     elif method == "corner_focus":
         return detect_watermark_by_corner_focus(image, focus_area="top-right")
+    elif method == "enhanced":
+        # Use enhanced detector for text-like watermarks
+        from .enhanced_detector import detect_watermark_enhanced
+        return detect_watermark_enhanced(image)
     else:  # auto
-        # Enhanced adaptive detection: try multiple methods and intelligently combine
+        # Auto mode: First try enhanced detector for text-like watermarks
+        # This is the preferred method for detecting text watermarks like "@username"
+        try:
+            from .enhanced_detector import detect_watermark_enhanced
+            enhanced_mask = detect_watermark_enhanced(image)
+            enhanced_ratio = np.sum(np.array(enhanced_mask) > 0) / (image.size[0] * image.size[1])
+
+            # If enhanced detector found something reasonable (0.1% to 15%), use it
+            if 0.001 < enhanced_ratio < 0.15:
+                return enhanced_mask
+        except Exception as e:
+            print(f"Enhanced detection warning: {e}")
+
+        # Fallback to legacy multi-method detection
         try:
             # Run multiple detection methods
             pattern_mask = detect_watermark_by_pattern(image)
@@ -726,22 +743,8 @@ def detect_watermark(image: Image.Image, method: str = "auto") -> Image.Image:
                 else:
                     return Image.fromarray(best_array)
             else:
-                # No clear detection found - return conservative combination
-                # Only use areas detected by at least 2 methods
-                combined_array = np.zeros_like(pattern_array)
-                detection_count = np.zeros_like(pattern_array, dtype=np.uint8)
-
-                for arr in [pattern_array, edge_array, color_array]:
-                    detection_count[arr > 0] += 1
-
-                # Areas detected by 2 or more methods
-                combined_array[detection_count >= 2] = 255
-
-                # If nothing found by multiple methods, use edge detection as fallback
-                if np.sum(combined_array) == 0:
-                    return edge_mask
-
-                return Image.fromarray(combined_array)
+                # No clear detection found - use edge detection as fallback
+                return edge_mask
 
         except Exception as e:
             # If anything fails, fall back to edge detection

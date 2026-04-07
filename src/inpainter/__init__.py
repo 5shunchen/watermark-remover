@@ -49,18 +49,22 @@ class Inpainter:
 
         # Auto-detect LaMa model path if method is "lama"
         if method == "lama" and model_path is None:
+            # Get the project root directory
+            project_root = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            )
             default_paths = [
+                os.path.join(project_root, "models", "lama.onnx"),
                 "models/lama.onnx",
-                os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                    "models",
-                    "lama.onnx",
-                ),
+                os.path.join(os.getcwd(), "models", "lama.onnx"),
             ]
             for path in default_paths:
                 if os.path.exists(path):
                     self.model_path = path
+                    print(f"Found LaMa model at {path}")
                     break
+            else:
+                print(f"LaMa model not found in any of: {default_paths}")
 
     def _load_model(self, model_path: Optional[str]):
         """
@@ -305,7 +309,7 @@ def remove_watermark(
     mask: Image.Image,
     model_path: Optional[str] = None,
     device: str = "cpu",
-    method: str = "telea",
+    method: str = "lama",
 ) -> Image.Image:
     """
     Remove watermark from an image using inpainting
@@ -316,7 +320,7 @@ def remove_watermark(
         model_path: Path to the LaMa model file (e.g., "models/lama.onnx")
         device: Device to run the model on ("cpu" or "cuda")
         method: Inpainting method - "telea" (fast), "ns" (high quality),
-                "ns_original", or "lama" (AI-based, best quality)
+                "ns_original", or "lama" (AI-based, best quality, default)
 
     Returns:
         PIL Image with watermarks removed

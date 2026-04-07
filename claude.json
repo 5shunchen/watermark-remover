@@ -5,6 +5,10 @@
       "args": [
         "@modelcontextprotocol/server-puppeteer"
       ]
+    },
+    "computer-use": {
+      "command": "computer-use-mcp",
+      "args": []
     }
   }
 }

@@ -1,10 +1,8 @@
 {
   "mcpServers": {
     "puppeteer": {
-      "command": "npx",
-      "args": [
-        "@modelcontextprotocol/server-puppeteer"
-      ]
+      "command": "/usr/lib/node_modules/@modelcontextprotocol/server-puppeteer/build/index.js",
+      "args": []
     },
     "computer-use": {
       "command": "computer-use-mcp",
